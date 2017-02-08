@@ -166,12 +166,14 @@ void UsbHandler::DeviceArrived(libusb_device* device_libusb) {
                                                   device_libusb,
                                                   device_handle_libusb));
   devices_.push_back(device);
-
   for (std::list<UsbDeviceListener*>::iterator it =
            usb_device_listeners_.begin();
        it != usb_device_listeners_.end();
        ++it) {
     (*it)->OnDeviceArrived(device);
+  }
+  if(IsAppleIAPDevice(device)){
+	  DeviceLeft(device_libusb);
   }
   LOG4CXX_TRACE(logger_, "exit");
 }

@@ -40,6 +40,8 @@
 #include "transport_manager/transport_adapter/server_connection_factory.h"
 #include "transport_manager/transport_adapter/client_connection_listener.h"
 
+#include "transport_manager/usbmuxd/usbmuxd_device.h"
+
 namespace transport_manager {
 namespace transport_adapter {
 
@@ -49,6 +51,7 @@ DeviceTypes devicesType = {
     std::make_pair(AOA, std::string("USB_AOA")),
     std::make_pair(PASA_AOA, std::string("USB_AOA")),
     std::make_pair(MME, std::string("USB_IOS")),
+    std::make_pair(USBMUXD, std::string("USBMUXD")),
     std::make_pair(BLUETOOTH, std::string("BLUETOOTH")),
     std::make_pair(PASA_BLUETOOTH, std::string("BLUETOOTH")),
     std::make_pair(TCP, std::string("WIFI"))};
@@ -360,6 +363,28 @@ DeviceList TransportAdapterImpl::GetDeviceList() const {
   return devices;
 }
 
+bool TransportAdapterImpl::IsSameDevice(char* udid) {
+  if(udid == NULL )
+  	return false;
+  bool same_device_found = false;
+  std::string sudid;
+  devices_mutex_.Acquire();
+  DeviceSptr existing_device;
+
+  sudid = udid;
+  for (DeviceMap::const_iterator i = devices_.begin(); i != devices_.end();
+   ++i) {
+    existing_device = i->second;
+   UsbmuxdDevice* other_Usbmuxd_device = static_cast<UsbmuxdDevice*>(existing_device.get());
+	if(other_Usbmuxd_device->in_addr() == sudid){
+		same_device_found = true;
+		break;
+	}
+ }
+ devices_mutex_.Release();
+ return same_device_found;
+}
+
 DeviceSptr TransportAdapterImpl::AddDevice(DeviceSptr device) {
   LOG4CXX_TRACE(logger_, "enter. device: " << device);
   DeviceSptr existing_device;
@@ -624,6 +649,7 @@ void TransportAdapterImpl::DisconnectDone(const DeviceUID& device_handle,
   }
 
   Store();
+  
   LOG4CXX_TRACE(logger_, "exit");
 }
 
@@ -749,18 +775,21 @@ void TransportAdapterImpl::ConnectFailed(const DeviceUID& device_handle,
 }
 
 void TransportAdapterImpl::RemoveFinalizedConnection(
-    const DeviceUID& device_handle, const ApplicationHandle& app_handle) {
+    const DeviceUID& device_handle, const ApplicationHandle& app_handle) {	
   const DeviceUID device_uid = device_handle;
   LOG4CXX_AUTO_TRACE(logger_);
   sync_primitives::AutoWriteLock lock(connections_lock_);
+  
   ConnectionMap::iterator it_conn =
       connections_.find(std::make_pair(device_uid, app_handle));
   if (it_conn == connections_.end()) {
     LOG4CXX_WARN(logger_,
                  "Device_id: " << &device_uid << ", app_handle: " << &app_handle
                                << " connection not found");
-    return;
+	printf("=1=TransportAdapterImpl::RemoveFinalizedConnection:connections_.size:%d,device_handle:%s\n",(int)(connections_.size()),device_handle.c_str());
+	return;
   }
+  
   const ConnectionInfo& info = it_conn->second;
   if (info.state != ConnectionInfo::FINALISING) {
     LOG4CXX_WARN(logger_,
@@ -769,6 +798,10 @@ void TransportAdapterImpl::RemoveFinalizedConnection(
     return;
   }
   connections_.erase(it_conn);
+  
+  if(this->GetDeviceType() == USBMUXD){
+  	RemoveDevice(device_handle);
+  }
 }
 
 void TransportAdapterImpl::AddListener(TransportAdapterListener* listener) {
@@ -966,7 +999,8 @@ void TransportAdapterImpl::RunAppOnDevice(const DeviceUID& device_uid,
   device->LaunchApp(bundle_id);
 }
 
-void TransportAdapterImpl::RemoveDevice(const DeviceUID& device_handle) {
+void TransportAdapterImpl::RemoveDevice(const DeviceUID& device_handle) {	
+  printf("RemoveDevice:%s\n",device_handle.c_str());
   LOG4CXX_AUTO_TRACE(logger_);
   LOG4CXX_DEBUG(logger_, "Device_handle: " << &device_handle);
   sync_primitives::AutoLock locker(devices_mutex_);

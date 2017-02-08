@@ -31,7 +31,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "transport_manager/tcp/tcp_client_listener.h"
+#include "transport_manager/usbmuxd/usbmuxd_client_listener.h"
 
 #include <memory.h>
 #include <signal.h>
@@ -55,15 +55,31 @@
 #include "utils/logger.h"
 #include "utils/threads/thread.h"
 #include "transport_manager/transport_adapter/transport_adapter_controller.h"
-#include "transport_manager/tcp/tcp_device.h"
-#include "transport_manager/tcp/tcp_socket_connection.h"
+#include "transport_manager/usbmuxd/usbmuxd_device.h"
+#include "transport_manager/usbmuxd/usbmuxd_socket_connection.h"
+
+//#include "libimobiledevice/lockdown.h"
+//#include "libimobiledevice/libimobiledevice.h"
+//#include "usbmuxd.h"
+
+#ifdef __CPLUSPLUS
+extern "C"{
+#endif
+#include "libimobiledevice/lockdown.h"
+#include "libimobiledevice/libimobiledevice.h"
+#include "usbmuxd-proto.h"
+#include "usbmuxd.h"
+#ifdef __CPLUSPLUS
+}
+#endif
+
 
 namespace transport_manager {
 namespace transport_adapter {
 
 CREATE_LOGGERPTR_GLOBAL(logger_, "TransportManager")
 
-TcpClientListener::TcpClientListener(TransportAdapterController* controller,
+UsbmuxdClientListener::UsbmuxdClientListener(TransportAdapterController* controller,
                                      const uint16_t port,
                                      const bool enable_keepalive)
     : port_(port)
@@ -72,11 +88,11 @@ TcpClientListener::TcpClientListener(TransportAdapterController* controller,
     , thread_(0)
     , socket_(-1)
     , thread_stop_requested_(false) {
-  thread_ = threads::CreateThread("TcpClientListener",
+  thread_ = threads::CreateThread("UsbmuxdClientListener",
                                   new ListeningThreadDelegate(this));
 }
 
-TransportAdapter::Error TcpClientListener::Init() {
+TransportAdapter::Error UsbmuxdClientListener::Init() {
   LOG4CXX_AUTO_TRACE(logger_);
   thread_stop_requested_ = false;
 
@@ -109,7 +125,7 @@ TransportAdapter::Error TcpClientListener::Init() {
   return TransportAdapter::OK;
 }
 
-void TcpClientListener::Terminate() {
+void UsbmuxdClientListener::Terminate() {
   LOG4CXX_AUTO_TRACE(logger_);
   if (socket_ == -1) {
     LOG4CXX_WARN(logger_, "Socket has been closed");
@@ -124,11 +140,11 @@ void TcpClientListener::Terminate() {
   socket_ = -1;
 }
 
-bool TcpClientListener::IsInitialised() const {
+bool UsbmuxdClientListener::IsInitialised() const {
   return thread_;
 }
 
-TcpClientListener::~TcpClientListener() {
+UsbmuxdClientListener::~UsbmuxdClientListener() {
   LOG4CXX_AUTO_TRACE(logger_);
   StopListening();
   delete thread_->delegate();
@@ -136,103 +152,44 @@ TcpClientListener::~TcpClientListener() {
   Terminate();
 }
 
-void SetKeepaliveOptions(const int fd) {
+void UsbmuxdClientListener::Loop() {
   LOG4CXX_AUTO_TRACE(logger_);
-  LOG4CXX_DEBUG(logger_, "fd: " << fd);
-  int yes = 1;
-  int keepidle = 3;  // 3 seconds to disconnection detecting
-  int keepcnt = 5;
-  int keepintvl = 1;
-#ifdef __linux__
-  int user_timeout = 7000;  // milliseconds
-  setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &yes, sizeof(yes));
-  setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
-  setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt));
-  setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
-  setsockopt(
-      fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &user_timeout, sizeof(user_timeout));
-#elif defined(__QNX__)  // __linux__
-  // TODO(KKolodiy): Out of order!
-  const int kMidLength = 4;
-  int mib[kMidLength];
-
-  mib[0] = CTL_NET;
-  mib[1] = AF_INET;
-  mib[2] = IPPROTO_TCP;
-  mib[3] = TCPCTL_KEEPIDLE;
-  sysctl(mib, kMidLength, NULL, NULL, &keepidle, sizeof(keepidle));
-
-  mib[0] = CTL_NET;
-  mib[1] = AF_INET;
-  mib[2] = IPPROTO_TCP;
-  mib[3] = TCPCTL_KEEPCNT;
-  sysctl(mib, kMidLength, NULL, NULL, &keepcnt, sizeof(keepcnt));
-
-  mib[0] = CTL_NET;
-  mib[1] = AF_INET;
-  mib[2] = IPPROTO_TCP;
-  mib[3] = TCPCTL_KEEPINTVL;
-  sysctl(mib, kMidLength, NULL, NULL, &keepintvl, sizeof(keepintvl));
-
-  struct timeval tval = {0};
-  tval.tv_sec = keepidle;
-  setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &yes, sizeof(yes));
-  setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE, &tval, sizeof(tval));
-#endif                  // __QNX__
-}
-
-void TcpClientListener::Loop() {
-  LOG4CXX_AUTO_TRACE(logger_);
+  int devlist_count = 0,ndevicenum = 0;
+  usbmuxd_device_info_t device_info ;
+  //libusbmuxd_set_debug_level(3) ;
   while (!thread_stop_requested_) {
-    sockaddr_in client_address;
-    socklen_t client_address_size = sizeof(client_address);
-    const int connection_fd = accept(
-        socket_, (struct sockaddr*)&client_address, &client_address_size);
-    if (thread_stop_requested_) {
-      LOG4CXX_DEBUG(logger_, "thread_stop_requested_");
-      close(connection_fd);
-      break;
-    }
-
-    if (connection_fd < 0) {
-      LOG4CXX_ERROR_WITH_ERRNO(logger_, "accept() failed");
-      continue;
-    }
-
-    if (AF_INET != client_address.sin_family) {
-      LOG4CXX_DEBUG(logger_, "Address of connected client is invalid");
-      close(connection_fd);
-      continue;
-    }
-
-    char device_name[32];
-    strncpy(device_name,
-            inet_ntoa(client_address.sin_addr),
-            sizeof(device_name) / sizeof(device_name[0]));
-    LOG4CXX_INFO(logger_, "Connected client " << device_name);
-
-    if (enable_keepalive_) {
-      SetKeepaliveOptions(connection_fd);
-    }
-
-    TcpDevice* tcp_device =
-        new TcpDevice(client_address.sin_addr.s_addr, device_name);
-    DeviceSptr device = controller_->AddDevice(tcp_device);
-    tcp_device = static_cast<TcpDevice*>(device.get());
-    const ApplicationHandle app_handle =
-        tcp_device->AddIncomingApplication(connection_fd);
-
-    TcpSocketConnection* connection(new TcpSocketConnection(
+	memset(&device_info,0,sizeof(usbmuxd_device_info_t));
+	usbmuxd_device_info_t *devicelist = NULL;	
+	devlist_count = usbmuxd_get_device_list(&devicelist);
+	//printf("devlist_count %d\n",devlist_count);
+	for(ndevicenum = 0;ndevicenum < devlist_count;ndevicenum ++){				
+   	  device_info =  devicelist[ndevicenum];
+   	  char uid[100] = "";
+   	  char device_name[100] = "";
+	  sprintf(device_name,"%s",device_info.udid);
+   	  strcpy(uid,device_info.udid);
+      if(controller_->IsSameDevice(uid))
+   	    continue;
+	  UsbmuxdDevice* Usbmuxd_device = new UsbmuxdDevice(uid, device_name);
+	  DeviceSptr device = controller_->AddDevice(Usbmuxd_device);  
+	  const int apphandle = device_info.handle;
+	  const ApplicationHandle app_handle = Usbmuxd_device->AddIncomingApplication(apphandle);
+	  Usbmuxd_device = static_cast<UsbmuxdDevice*>(device.get());
+      UsbmuxdSocketConnection* connection(new UsbmuxdSocketConnection(
         device->unique_device_id(), app_handle, controller_));
-    connection->set_socket(connection_fd);
-    const TransportAdapter::Error error = connection->Start();
-    if (error != TransportAdapter::OK) {
-      delete connection;
-    }
+      const TransportAdapter::Error error = connection->Start();
+      if (error != TransportAdapter::OK) {
+        delete connection;
+	  }
+	}
+	usbmuxd_device_list_free(&devicelist);
+	devicelist = NULL;
+	//sleep(2);
+	usleep(100);
   }
 }
 
-void TcpClientListener::StopLoop() {
+void UsbmuxdClientListener::StopLoop() {
   LOG4CXX_AUTO_TRACE(logger_);
   thread_stop_requested_ = true;
   // We need to connect to the listening socket to unblock accept() call
@@ -248,7 +205,7 @@ void TcpClientListener::StopLoop() {
   close(byesocket);
 }
 
-TransportAdapter::Error TcpClientListener::StartListening() {
+TransportAdapter::Error UsbmuxdClientListener::StartListening() {
   LOG4CXX_AUTO_TRACE(logger_);
   if (thread_->is_running()) {
     LOG4CXX_WARN(
@@ -258,35 +215,35 @@ TransportAdapter::Error TcpClientListener::StartListening() {
   }
 
   if (!thread_->start()) {
-    LOG4CXX_ERROR(logger_, "Tcp client listener thread start failed");
+    LOG4CXX_ERROR(logger_, "Usbmuxd client listener thread start failed");
     return TransportAdapter::FAIL;
   }
-  LOG4CXX_INFO(logger_, "Tcp client listener has started successfully");
+  LOG4CXX_INFO(logger_, "Usbmuxd client listener has started successfully");
   return TransportAdapter::OK;
 }
 
-void TcpClientListener::ListeningThreadDelegate::exitThreadMain() {
+void UsbmuxdClientListener::ListeningThreadDelegate::exitThreadMain() {
   parent_->StopLoop();
 }
 
-void TcpClientListener::ListeningThreadDelegate::threadMain() {
+void UsbmuxdClientListener::ListeningThreadDelegate::threadMain() {
   parent_->Loop();
 }
 
-TcpClientListener::ListeningThreadDelegate::ListeningThreadDelegate(
-    TcpClientListener* parent)
+UsbmuxdClientListener::ListeningThreadDelegate::ListeningThreadDelegate(
+    UsbmuxdClientListener* parent)
     : parent_(parent) {}
 
-TransportAdapter::Error TcpClientListener::StopListening() {
+TransportAdapter::Error UsbmuxdClientListener::StopListening() {
   LOG4CXX_AUTO_TRACE(logger_);
   if (!thread_->is_running()) {
-    LOG4CXX_DEBUG(logger_, "TcpClientListener is not running now");
+    LOG4CXX_DEBUG(logger_, "UsbmuxdClientListener is not running now");
     return TransportAdapter::BAD_STATE;
   }
 
   thread_->join();
 
-  LOG4CXX_INFO(logger_, "Tcp client listener has stopped successfully");
+  LOG4CXX_INFO(logger_, "Usbmuxd client listener has stopped successfully");
   return TransportAdapter::OK;
 }
 

@@ -1,0 +1,195 @@
+/*
+ *
+ * Copyright (c) 2013, Ford Motor Company
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following
+ * disclaimer in the documentation and/or other materials provided with the
+ * distribution.
+ *
+ * Neither the name of the Ford Motor Company nor the names of its contributors
+ * may be used to endorse or promote products derived from this software
+ * without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+#include "transport_manager/usbmuxd/usbmuxd_socket_connection.h"
+
+#include <memory.h>
+#include <signal.h>
+#include <errno.h>
+#include <unistd.h>
+
+#include "utils/logger.h"
+#include "utils/threads/thread.h"
+#include "transport_manager/usbmuxd/usbmuxd_device.h"
+#include "transport_manager/transport_adapter/transport_adapter_controller.h"
+
+#include "libimobiledevice/lockdown.h"
+#include "libimobiledevice/libimobiledevice.h"
+#include "usbmuxd.h"
+
+
+namespace transport_manager {
+namespace transport_adapter {
+
+CREATE_LOGGERPTR_GLOBAL(logger_, "TransportManager")
+
+UsbmuxdSocketConnection::UsbmuxdSocketConnection(const DeviceUID& device_uid,
+                                         const ApplicationHandle& app_handle,
+                                         TransportAdapterController* controller)
+    : ThreadedSocketConnection(device_uid, app_handle, controller) {}
+
+UsbmuxdSocketConnection::~UsbmuxdSocketConnection() {}
+
+bool UsbmuxdSocketConnection::Establish(ConnectError** error) {
+ DeviceSptr device = controller()->FindDevice(device_handle());
+  if (!device.valid()) {
+    LOG4CXX_ERROR(logger_, "Device " << device_handle() << " not found");
+    *error = new ConnectError();
+    return false;
+  }
+
+  UsbmuxdDevice* Usbmuxd_device = static_cast<UsbmuxdDevice*>(device.get());
+  ApplicationHandle tmp = application_handle();
+  uint32_t handle = Usbmuxd_device->applications_[tmp].apphandle;
+  int mobileappport = 20001;
+
+  const int socket = usbmuxd_connect(handle,mobileappport);
+  if(socket< 0)
+  if (socket < 0) {
+    LOG4CXX_ERROR(logger_, "Failed to conncet");
+    *error = new ConnectError();
+    return false;
+  }
+
+  set_socket(socket);
+	
+  return true;
+}
+
+void UsbmuxdSocketConnection::threadMain() {
+  LOG4CXX_AUTO_TRACE(logger_);
+  controller_->ConnectionCreated(this, device_handle(), application_handle());
+  ConnectError* connect_error = NULL;
+
+#ifdef USBMUXD_SUPPORT  
+  while (!terminate_flag_) {
+	if (!Establish(&connect_error)) {
+	  LOG4CXX_ERROR(logger_, "Connection Establish failed");
+	  delete connect_error;
+	  usleep(100);
+	}
+	else{
+		break;
+	}
+  }
+  
+  LOG4CXX_DEBUG(logger_, "Connection established");
+  controller_->ConnectDone(device_handle(), application_handle());
+  while (!terminate_flag_) {	
+    Transmit();
+  }
+#else 
+  if (!Establish(&connect_error)) {
+    LOG4CXX_ERROR(logger_, "Connection Establish failed");
+    delete connect_error;
+  }
+  LOG4CXX_DEBUG(logger_, "Connection established");
+  
+  controller_->ConnectDone(device_handle(), application_handle());
+  
+  while (!terminate_flag_) {
+    Transmit();
+  }
+#endif
+
+  LOG4CXX_DEBUG(logger_, "Connection is to finalize");
+  Finalize();
+  sync_primitives::AutoLock auto_lock(frames_to_send_mutex_);
+  while (!frames_to_send_.empty()) {
+    LOG4CXX_INFO(logger_, "removing message");
+    ::protocol_handler::RawMessagePtr message = frames_to_send_.front();
+    frames_to_send_.pop();
+    controller_->DataSendFailed(
+        device_handle(), application_handle(), message, DataSendError());
+  }
+  
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+UsbmuxdServerOiginatedSocketConnection::UsbmuxdServerOiginatedSocketConnection(
+    const DeviceUID& device_uid,
+    const ApplicationHandle& app_handle,
+    TransportAdapterController* controller)
+    : ThreadedSocketConnection(device_uid, app_handle, controller) {}
+
+UsbmuxdServerOiginatedSocketConnection::~UsbmuxdServerOiginatedSocketConnection() {}
+
+bool UsbmuxdServerOiginatedSocketConnection::Establish(ConnectError** error) {
+  LOG4CXX_AUTO_TRACE(logger_);
+  DCHECK(error);
+  LOG4CXX_DEBUG(logger_, "error " << error);
+  DeviceSptr device = controller()->FindDevice(device_handle());
+  if (!device.valid()) {
+    LOG4CXX_ERROR(logger_, "Device " << device_handle() << " not found");
+    *error = new ConnectError();
+    return false;
+  }
+
+  UsbmuxdDevice* Usbmuxd_device = static_cast<UsbmuxdDevice*>(device.get());
+  ApplicationHandle tmp = application_handle();
+  uint32_t handle = Usbmuxd_device->applications_[tmp].socket;
+  int mobileappport = 20001;
+
+  const int socket = usbmuxd_connect(handle,mobileappport);
+  if(socket< 0)
+  if (socket < 0) {
+    LOG4CXX_ERROR(logger_, "Failed to conncet");
+    *error = new ConnectError();
+    return false;
+  }
+
+  set_socket(socket);
+  return true;
+}
+
+}  // namespace transport_adapter
+}  // namespace transport_manager
+
+

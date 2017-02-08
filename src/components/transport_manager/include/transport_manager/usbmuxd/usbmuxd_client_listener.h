@@ -1,6 +1,6 @@
 /*
- * \file tcp_client_listener.h
- * \brief TcpClientListener class header file.
+ * \file Usbmuxd_client_listener.h
+ * \brief UsbmuxdClientListener class header file.
  *
  * Copyright (c) 2013, Ford Motor Company
  * All rights reserved.
@@ -33,8 +33,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_TCP_TCP_CLIENT_LISTENER_H_
-#define SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_TCP_TCP_CLIENT_LISTENER_H_
+#ifndef SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_USBMUXD_USBMUXD_CLIENT_LISTENER_H_
+#define SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_USBMUXD_USBMUXD_CLIENT_LISTENER_H_
 
 #include "utils/threads/thread_delegate.h"
 #include "transport_manager/transport_adapter/client_connection_listener.h"
@@ -47,37 +47,37 @@ namespace transport_adapter {
 class TransportAdapterController;
 
 /**
- * @brief Listener of device adapter that use TCP transport.
+ * @brief Listener of device adapter that use Usbmuxd transport.
  */
-class TcpClientListener : public ClientConnectionListener {
+class UsbmuxdClientListener : public ClientConnectionListener {
  public:
   /**
    * @breaf Constructor.
    *
    * @param controller Pointer to the device adapter controller.
    * @param port Port No.
-   * @param enable_keepalive If true enables TCP keepalive on accepted
+   * @param enable_keepalive If true enables Usbmuxd keepalive on accepted
    *connections
    */
-  TcpClientListener(TransportAdapterController* controller,
+  UsbmuxdClientListener(TransportAdapterController* controller,
                     uint16_t port,
                     bool enable_keepalive);
 
   /**
    * @brief Destructor.
    */
-  virtual ~TcpClientListener();
+  virtual ~UsbmuxdClientListener();
 
   /**
-   * @brief Run TCP client listener.
+   * @brief Run Usbmuxd client listener.
    *
-   * @return Error information about possible reason of starting TCP listener
+   * @return Error information about possible reason of starting Usbmuxd listener
    *listener failure.
    */
   virtual TransportAdapter::Error Init();
 
   /**
-   * @brief Stop TCP client listener.
+   * @brief Stop Usbmuxd client listener.
    */
   virtual void Terminate();
 
@@ -97,7 +97,7 @@ class TcpClientListener : public ClientConnectionListener {
   virtual TransportAdapter::Error StartListening();
 
   /**
-   * @brief Terminate TCP client listener thread.
+   * @brief Terminate Usbmuxd client listener thread.
    */
   virtual TransportAdapter::Error StopListening();
 
@@ -114,7 +114,7 @@ class TcpClientListener : public ClientConnectionListener {
     return thread_;
   }
 #endif  // BUILD_TESTS
-
+	
  private:
   const uint16_t port_;
   const bool enable_keepalive_;
@@ -128,16 +128,16 @@ class TcpClientListener : public ClientConnectionListener {
 
   class ListeningThreadDelegate : public threads::ThreadDelegate {
    public:
-    explicit ListeningThreadDelegate(TcpClientListener* parent);
+    explicit ListeningThreadDelegate(UsbmuxdClientListener* parent);
     virtual void threadMain();
     void exitThreadMain();
 
    private:
-    TcpClientListener* parent_;
+    UsbmuxdClientListener* parent_;
   };
 };
 
 }  // namespace transport_adapter
 }  // namespace transport_manager
 
-#endif  // SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_TCP_TCP_CLIENT_LISTENER_H_
+#endif  // SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_Usbmuxd_Usbmuxd_CLIENT_LISTENER_H_

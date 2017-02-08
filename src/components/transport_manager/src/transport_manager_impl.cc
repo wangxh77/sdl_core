@@ -296,6 +296,7 @@ int TransportManagerImpl::Stop() {
 
 int TransportManagerImpl::SendMessageToDevice(
     const ::protocol_handler::RawMessagePtr message) {
+    
   LOG4CXX_TRACE(logger_, "enter. RawMessageSptr: " << message);
   LOG4CXX_INFO(logger_,
                "Send message to device called with arguments "
@@ -336,6 +337,7 @@ int TransportManagerImpl::SendMessageToDevice(
     metric_observer_->StartRawMsg(message.get());
   }
 #endif  // TELEMETRY_MONITOR
+
   this->PostMessage(message);
   LOG4CXX_TRACE(logger_, "exit with E_SUCCESS");
   return E_SUCCESS;
@@ -622,16 +624,16 @@ void TransportManagerImpl::RemoveConnection(
     const uint32_t id, transport_adapter::TransportAdapter* transport_adapter) {
   LOG4CXX_AUTO_TRACE(logger_);
   LOG4CXX_DEBUG(logger_, "Id: " << id);
+  
   sync_primitives::AutoWriteLock lock(connections_lock_);
   for (std::vector<ConnectionInternal>::iterator it = connections_.begin();
        it != connections_.end();
        ++it) {
     if (it->id == id) {
-      connections_.erase(it);
       if (transport_adapter) {
-        transport_adapter->RemoveFinalizedConnection(it->device,
-                                                     it->application);
+	  transport_adapter->RemoveFinalizedConnection(it->device,it->application);
       }
+      connections_.erase(it);
       break;
     }
   }

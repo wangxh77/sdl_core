@@ -94,6 +94,9 @@ class ThreadedSocketConnection : public Connection {
     socket_ = socket;
   }
 
+  int usbmuxd_send_data(int connect_sfd,uint8_t* sendsrcdata,uint32_t nsrcsendlen);
+  int usbmuxd_recv_data(int connect_sfd,uint8_t *data,uint32_t datasize);
+  int usbmuxd_recv_head(int connect_sfd);
  protected:
   /**
    * @brief Constructor.

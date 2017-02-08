@@ -442,6 +442,8 @@ class TransportAdapterImpl : public TransportAdapter,
   TMTelemetryObserver* GetTelemetryObserver() OVERRIDE;
 #endif  // TELEMETRY_MONITOR
 
+  bool IsSameDevice(char* udid);
+
  protected:
   /**
    * @brief Store adapter state where applicable

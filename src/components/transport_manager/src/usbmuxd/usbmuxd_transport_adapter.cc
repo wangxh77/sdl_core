@@ -30,7 +30,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "transport_manager/tcp/tcp_transport_adapter.h"
+#include "transport_manager/usbmuxd/usbmuxd_transport_adapter.h"
 
 #include <memory.h>
 #include <signal.h>
@@ -42,34 +42,34 @@
 
 #include "utils/logger.h"
 #include "utils/threads/thread_delegate.h"
-#include "transport_manager/tcp/tcp_client_listener.h"
-#include "transport_manager/tcp/tcp_connection_factory.h"
-#include "transport_manager/tcp/tcp_device.h"
+#include "transport_manager/usbmuxd/usbmuxd_client_listener.h"
+#include "transport_manager/usbmuxd/usbmuxd_connection_factory.h"
+#include "transport_manager/usbmuxd/usbmuxd_device.h"
 
 namespace transport_manager {
 namespace transport_adapter {
 
 CREATE_LOGGERPTR_GLOBAL(logger_, "TransportManager")
 
-TcpTransportAdapter::TcpTransportAdapter(
+UsbmuxdTransportAdapter::UsbmuxdTransportAdapter(
     const uint16_t port,
     resumption::LastState& last_state,
     const TransportManagerSettings& settings)
     : TransportAdapterImpl(NULL,
-                           new TcpConnectionFactory(this),
-                           new TcpClientListener(this, port, true),
+                           new UsbmuxdConnectionFactory(this),
+                           new UsbmuxdClientListener(this, port, true),
                            last_state,
                            settings) {}
 
-TcpTransportAdapter::~TcpTransportAdapter() {}
+UsbmuxdTransportAdapter::~UsbmuxdTransportAdapter() {}
 
-DeviceType TcpTransportAdapter::GetDeviceType() const {
-  return TCP;
+DeviceType UsbmuxdTransportAdapter::GetDeviceType() const {
+  return USBMUXD;
 }
 
-void TcpTransportAdapter::Store() const {
+void UsbmuxdTransportAdapter::Store() const {
   LOG4CXX_AUTO_TRACE(logger_);
-  Json::Value tcp_adapter_dictionary;
+  Json::Value Usbmuxd_adapter_dictionary;
   Json::Value devices_dictionary;
   DeviceList device_ids = GetDeviceList();
   for (DeviceList::const_iterator i = device_ids.begin(); i != device_ids.end();
@@ -79,22 +79,21 @@ void TcpTransportAdapter::Store() const {
     if (!device) {  // device could have been disconnected
       continue;
     }
-    utils::SharedPtr<TcpDevice> tcp_device =
-        DeviceSptr::static_pointer_cast<TcpDevice>(device);
+    utils::SharedPtr<UsbmuxdDevice> Usbmuxd_device =
+        DeviceSptr::static_pointer_cast<UsbmuxdDevice>(device);
     Json::Value device_dictionary;
-    device_dictionary["name"] = tcp_device->name();
-    struct in_addr address;
-    address.s_addr = tcp_device->in_addr();
-    device_dictionary["address"] = std::string(inet_ntoa(address));
+    device_dictionary["name"] = Usbmuxd_device->name();
+    std::string address = Usbmuxd_device->in_addr();
+    device_dictionary["address"] = address;
     Json::Value applications_dictionary;
-    ApplicationList app_ids = tcp_device->GetApplicationList();
+    ApplicationList app_ids = Usbmuxd_device->GetApplicationList();
     for (ApplicationList::const_iterator j = app_ids.begin();
          j != app_ids.end();
          ++j) {
       ApplicationHandle app_handle = *j;
-      if (FindEstablishedConnection(tcp_device->unique_device_id(),
+      if (FindEstablishedConnection(Usbmuxd_device->unique_device_id(),
                                     app_handle)) {
-        int port = tcp_device->GetApplicationPort(app_handle);
+        int port = Usbmuxd_device->GetApplicationPort(app_handle);
         if (port != -1) {  // don't want to store incoming applications
           Json::Value application_dictionary;
           char port_record[12];
@@ -109,26 +108,26 @@ void TcpTransportAdapter::Store() const {
       devices_dictionary.append(device_dictionary);
     }
   }
-  tcp_adapter_dictionary["devices"] = devices_dictionary;
+
+  Usbmuxd_adapter_dictionary["devices"] = devices_dictionary;
   Json::Value& dictionary = last_state().dictionary;
-  dictionary["TransportManager"]["TcpAdapter"] = tcp_adapter_dictionary;
+  dictionary["TransportManager"]["UsbmuxdAdapter"] = Usbmuxd_adapter_dictionary;
 }
 
-bool TcpTransportAdapter::Restore() {
+bool UsbmuxdTransportAdapter::Restore() {
   LOG4CXX_AUTO_TRACE(logger_);
   bool errors_occurred = false;
-  const Json::Value tcp_adapter_dictionary =
-      last_state().dictionary["TransportManager"]["TcpAdapter"];
-  const Json::Value devices_dictionary = tcp_adapter_dictionary["devices"];
+  const Json::Value Usbmuxd_adapter_dictionary =
+      last_state().dictionary["TransportManager"]["UsbmuxdAdapter"];
+  const Json::Value devices_dictionary = Usbmuxd_adapter_dictionary["devices"];
   for (Json::Value::const_iterator i = devices_dictionary.begin();
        i != devices_dictionary.end();
        ++i) {
     const Json::Value device_dictionary = *i;
     std::string name = device_dictionary["name"].asString();
-    std::string address_record = device_dictionary["address"].asString();
-    in_addr_t address = inet_addr(address_record.c_str());
-    TcpDevice* tcp_device = new TcpDevice(address, name);
-    DeviceSptr device(tcp_device);
+    std::string address = device_dictionary["address"].asString();
+    UsbmuxdDevice* Usbmuxd_device = new UsbmuxdDevice(address, "usbmuxd");
+    DeviceSptr device(Usbmuxd_device);
     AddDevice(device);
     const Json::Value applications_dictionary =
         device_dictionary["applications"];
@@ -138,7 +137,7 @@ bool TcpTransportAdapter::Restore() {
       const Json::Value application_dictionary = *j;
       std::string port_record = application_dictionary["port"].asString();
       int port = atoi(port_record.c_str());
-      ApplicationHandle app_handle = tcp_device->AddDiscoveredApplication(port);
+      ApplicationHandle app_handle = Usbmuxd_device->AddDiscoveredApplication(port);
       if (Error::OK != Connect(device->unique_device_id(), app_handle)) {
         errors_occurred = true;
       }

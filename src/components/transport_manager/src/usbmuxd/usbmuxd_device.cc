@@ -31,30 +31,30 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include "utils/logger.h"
-#include "transport_manager/tcp/tcp_device.h"
+#include "transport_manager/usbmuxd/usbmuxd_device.h"
 
 namespace transport_manager {
 namespace transport_adapter {
 
 CREATE_LOGGERPTR_GLOBAL(logger_, "TransportManager")
 
-TcpDevice::TcpDevice(const in_addr_t& in_addr, const std::string& name)
+UsbmuxdDevice::UsbmuxdDevice(const std::string& udid, const std::string& name)
     : Device(name, name)
     , applications_mutex_()
-    , in_addr_(in_addr)
+    , in_addr_(udid)
     , last_handle_(0) {
   LOG4CXX_AUTO_TRACE(logger_);
 }
 
-bool TcpDevice::IsSameAs(const Device* other) const {
+bool UsbmuxdDevice::IsSameAs(const Device* other) const {
   LOG4CXX_AUTO_TRACE(logger_);
   LOG4CXX_DEBUG(logger_, "Device: " << other);
-  const TcpDevice* other_tcp_device = static_cast<const TcpDevice*>(other);
+  const UsbmuxdDevice* other_Usbmuxd_device = static_cast<const UsbmuxdDevice*>(other);
 
-  if (other_tcp_device->in_addr_ == in_addr_) {
+  if (other_Usbmuxd_device->in_addr_ == in_addr_) {
     LOG4CXX_TRACE(
         logger_,
-        "exit with TRUE. Condition: other_tcp_device->in_addr_ == in_addr_");
+        "exit with TRUE. Condition: other_Usbmuxd_device->in_addr_ == in_addr_");
     return true;
   } else {
     LOG4CXX_TRACE(logger_, "exit with FALSE");
@@ -62,7 +62,7 @@ bool TcpDevice::IsSameAs(const Device* other) const {
   }
 }
 
-ApplicationList TcpDevice::GetApplicationList() const {
+ApplicationList UsbmuxdDevice::GetApplicationList() const {
   LOG4CXX_AUTO_TRACE(logger_);
   sync_primitives::AutoLock locker(applications_mutex_);
   ApplicationList app_list;
@@ -75,12 +75,13 @@ ApplicationList TcpDevice::GetApplicationList() const {
   return app_list;
 }
 
-ApplicationHandle TcpDevice::AddIncomingApplication(int socket_fd) {
+ApplicationHandle UsbmuxdDevice::AddIncomingApplication(int apphandle) {
   LOG4CXX_AUTO_TRACE(logger_);
-  LOG4CXX_DEBUG(logger_, "Socket_fd: " << socket_fd);
+  LOG4CXX_DEBUG(logger_, "apphandle: " << apphandle);
   Application app;
   app.incoming = true;
-  app.socket = socket_fd;
+  app.socket = 0;
+  app.apphandle = apphandle;
   app.port = 0;  // this line removes compiler warning
   sync_primitives::AutoLock locker(applications_mutex_);
   const ApplicationHandle app_handle = ++last_handle_;
@@ -89,7 +90,7 @@ ApplicationHandle TcpDevice::AddIncomingApplication(int socket_fd) {
   return app_handle;
 }
 
-ApplicationHandle TcpDevice::AddDiscoveredApplication(int port) {
+ApplicationHandle UsbmuxdDevice::AddDiscoveredApplication(int port) {
   LOG4CXX_AUTO_TRACE(logger_);
   LOG4CXX_DEBUG(logger_, "Port " << port);
   Application app;
@@ -103,18 +104,18 @@ ApplicationHandle TcpDevice::AddDiscoveredApplication(int port) {
   return app_handle;
 }
 
-void TcpDevice::RemoveApplication(const ApplicationHandle app_handle) {
+void UsbmuxdDevice::RemoveApplication(const ApplicationHandle app_handle) {
   LOG4CXX_AUTO_TRACE(logger_);
   LOG4CXX_DEBUG(logger_, "ApplicationHandle: " << app_handle);
   sync_primitives::AutoLock locker(applications_mutex_);
   applications_.erase(app_handle);
 }
 
-TcpDevice::~TcpDevice() {
+UsbmuxdDevice::~UsbmuxdDevice() {
   LOG4CXX_AUTO_TRACE(logger_);
 }
 
-int TcpDevice::GetApplicationSocket(const ApplicationHandle app_handle) const {
+int UsbmuxdDevice::GetApplicationSocket(const ApplicationHandle app_handle) const {
   LOG4CXX_AUTO_TRACE(logger_);
   LOG4CXX_DEBUG(logger_, "ApplicationHandle: " << app_handle);
   std::map<ApplicationHandle, Application>::const_iterator it =
@@ -131,7 +132,7 @@ int TcpDevice::GetApplicationSocket(const ApplicationHandle app_handle) const {
   return it->second.socket;
 }
 
-int TcpDevice::GetApplicationPort(const ApplicationHandle app_handle) const {
+int UsbmuxdDevice::GetApplicationPort(const ApplicationHandle app_handle) const {
   LOG4CXX_AUTO_TRACE(logger_);
   LOG4CXX_DEBUG(logger_, "ApplicationHandle: " << app_handle);
   std::map<ApplicationHandle, Application>::const_iterator it =
