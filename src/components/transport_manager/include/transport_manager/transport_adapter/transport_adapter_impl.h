@@ -443,6 +443,7 @@ class TransportAdapterImpl : public TransportAdapter,
 #endif  // TELEMETRY_MONITOR
 
   bool IsSameDevice(char* udid);
+  void RemoveUnFindDevice(std::vector<DeviceUID> DeviceList); 
 
  protected:
   /**

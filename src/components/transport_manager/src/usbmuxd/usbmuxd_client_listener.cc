@@ -162,30 +162,42 @@ void UsbmuxdClientListener::Loop() {
 	usbmuxd_device_info_t *devicelist = NULL;	
 	devlist_count = usbmuxd_get_device_list(&devicelist);
 	//printf("devlist_count %d\n",devlist_count);
+	std::vector<DeviceUID> DeviceList;
 	for(ndevicenum = 0;ndevicenum < devlist_count;ndevicenum ++){				
+ 	  int appport = 20010;
    	  device_info =  devicelist[ndevicenum];
    	  char uid[100] = "";
    	  char device_name[100] = "";
-	  sprintf(device_name,"%s",device_info.udid);
-   	  strcpy(uid,device_info.udid);
-      if(controller_->IsSameDevice(uid))
-   	    continue;
-	  UsbmuxdDevice* Usbmuxd_device = new UsbmuxdDevice(uid, device_name);
-	  DeviceSptr device = controller_->AddDevice(Usbmuxd_device);  
-	  const int apphandle = device_info.handle;
-	  const ApplicationHandle app_handle = Usbmuxd_device->AddIncomingApplication(apphandle);
-	  Usbmuxd_device = static_cast<UsbmuxdDevice*>(device.get());
-      UsbmuxdSocketConnection* connection(new UsbmuxdSocketConnection(
-        device->unique_device_id(), app_handle, controller_));
-      const TransportAdapter::Error error = connection->Start();
-      if (error != TransportAdapter::OK) {
-        delete connection;
+
+	  for(;appport < 20003;appport ++){
+		  sprintf(uid,"%d",appport);
+		  memcpy(uid+strlen(uid),device_info.udid,strlen(device_info.udid));
+		  sprintf(device_name,"%s",uid);
+		  DeviceUID devi;
+		  devi = uid;
+		  DeviceList.push_back(devi);
+		  if(controller_->IsSameDevice(uid)){
+			continue;
+		  }
+
+		  UsbmuxdDevice* Usbmuxd_device = new UsbmuxdDevice(uid, device_name);
+		  DeviceSptr device = controller_->AddDevice(Usbmuxd_device);  
+		  const int apphandle = device_info.handle;
+		  const ApplicationHandle app_handle = Usbmuxd_device->AddIncomingApplication(apphandle);
+		  Usbmuxd_device = static_cast<UsbmuxdDevice*>(device.get());
+		  UsbmuxdSocketConnection* connection(new UsbmuxdSocketConnection(
+			device->unique_device_id(), app_handle, controller_,appport));
+		  const TransportAdapter::Error error = connection->Start();
+		  if (error != TransportAdapter::OK) {
+			delete connection;
+		  }
 	  }
 	}
+	controller_->RemoveUnFindDevice(DeviceList);
 	usbmuxd_device_list_free(&devicelist);
 	devicelist = NULL;
-	//sleep(2);
 	usleep(100);
+	//sleep(1);
   }
 }
 

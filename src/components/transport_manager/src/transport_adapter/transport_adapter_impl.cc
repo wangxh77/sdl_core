@@ -786,7 +786,6 @@ void TransportAdapterImpl::RemoveFinalizedConnection(
     LOG4CXX_WARN(logger_,
                  "Device_id: " << &device_uid << ", app_handle: " << &app_handle
                                << " connection not found");
-	printf("=1=TransportAdapterImpl::RemoveFinalizedConnection:connections_.size:%d,device_handle:%s\n",(int)(connections_.size()),device_handle.c_str());
 	return;
   }
   
@@ -800,6 +799,7 @@ void TransportAdapterImpl::RemoveFinalizedConnection(
   connections_.erase(it_conn);
   
   if(this->GetDeviceType() == USBMUXD){
+	  puts("=RemoveFinalizedConnection=\n");
   	RemoveDevice(device_handle);
   }
 }
@@ -845,7 +845,7 @@ void TransportAdapterImpl::ConnectionFinished(
 void TransportAdapterImpl::ConnectionAborted(
     const DeviceUID& device_id,
     const ApplicationHandle& app_handle,
-    const CommunicationError& error) {
+    const CommunicationError& error) {   
   ConnectionFinished(device_id, app_handle);
   for (TransportAdapterListenerList::iterator it = listeners_.begin();
        it != listeners_.end();
@@ -1016,6 +1016,35 @@ void TransportAdapterImpl::RemoveDevice(const DeviceUID& device_handle) {
         listener->OnDeviceListUpdated(this);
       }
     }
+  }
+}
+
+void TransportAdapterImpl::RemoveUnFindDevice(std::vector<DeviceUID> DeList) {	
+  bool find = false;
+  DeviceList devices;
+  devices_mutex_.Acquire();
+  for (DeviceMap::const_iterator it = devices_.begin(); it != devices_.end();
+       ++it) {
+    devices.push_back(it->first);
+  }
+  devices_mutex_.Release();
+	   
+  for (std::vector<DeviceUID>::iterator it = devices.begin(); it != devices.end();++it) {
+  	 DeviceUID device_handle = *it;
+	 //ApplicationHandle app_handle = it->second;
+  	 find = false;
+	 for (std::vector<DeviceUID>::iterator de = DeList.begin(); de != DeList.end(); ++de){
+		DeviceUID device_handle1 = *de;
+		//printf("device_handle1:%s\t,device_handle:%s\t%d\t%d\n",device_handle1.c_str(),device_handle.c_str(),device_handle1 == device_handle,(int)DeviceList.size());
+    	if(device_handle1 == device_handle){
+			find = true;
+            break;
+		}
+	 }
+	 if(!find){
+	 	puts("=RemoveUnFindDevice=\n");
+		RemoveDevice(device_handle);
+	 }
   }
 }
 

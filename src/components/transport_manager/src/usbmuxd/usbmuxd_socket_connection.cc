@@ -73,13 +73,15 @@ struct usbmuxd_header_real {
 
 UsbmuxdSocketConnection::UsbmuxdSocketConnection(const DeviceUID& device_uid,
                                          const ApplicationHandle& app_handle,
-                                         TransportAdapterController* controller)
+                                         TransportAdapterController* controller,
+                                         const int appport)
 		: read_fd_(-1)
 		, write_fd_(-1)
 		, controller_(controller)
 		, frames_to_send_()
 		, frames_to_send_mutex_()
 		, socket_(-1)
+		, myport(appport)
 		, terminate_flag_(false)
 		, unexpected_disconnect_(false)
 		, device_uid_(device_uid)
@@ -177,7 +179,7 @@ TransportAdapter::Error UsbmuxdSocketConnection::SendData(
   return Notify();
 }
 
-TransportAdapter::Error UsbmuxdSocketConnection::Disconnect() {
+TransportAdapter::Error UsbmuxdSocketConnection::Disconnect() {	
   LOG4CXX_AUTO_TRACE(logger_);
   terminate_flag_ = true;
   return Notify();
@@ -199,6 +201,11 @@ void UsbmuxdSocketConnection::threadMain() {
 
   while (!terminate_flag_) {
     nnowtime = time(NULL);
+	
+	DeviceSptr device = controller()->FindDevice(device_handle());
+	if (!device.valid()) {
+		Abort();
+	}
 	if (!Establish(&connect_error)) {
 	  LOG4CXX_ERROR(logger_, "Connection Establish failed");
 	  delete connect_error;
@@ -208,8 +215,7 @@ void UsbmuxdSocketConnection::threadMain() {
 		  return;
 	  }
 	  else {
-		 usleep(100);
-		 // sleep(1);
+	     usleep(100);
 	  }	
 	}
 	else{
@@ -217,14 +223,20 @@ void UsbmuxdSocketConnection::threadMain() {
 	}
   }
   LOG4CXX_DEBUG(logger_, "Connection established");
+  const DeviceUID device_uid_1 = device_handle();
   controller_->ConnectDone(device_handle(), application_handle());
   while (!terminate_flag_) {	
+    DeviceSptr device = controller()->FindDevice(device_handle());
+    if (!device.valid()) {
+  	 	Abort();
+    }
     Transmit();
   }
+  
   LOG4CXX_DEBUG(logger_, "Connection is to finalize");
   Finalize();
   sync_primitives::AutoLock auto_lock(frames_to_send_mutex_);
-  while (!frames_to_send_.empty()) {
+  while (!frames_to_send_.empty() && !terminate_flag_) {
     LOG4CXX_INFO(logger_, "removing message");
     ::protocol_handler::RawMessagePtr message = frames_to_send_.front();
     frames_to_send_.pop();
@@ -244,16 +256,15 @@ bool UsbmuxdSocketConnection::Establish(ConnectError** error) {
   UsbmuxdDevice* Usbmuxd_device = static_cast<UsbmuxdDevice*>(device.get());
   ApplicationHandle tmp = application_handle();
   uint32_t handle = Usbmuxd_device->applications_[tmp].apphandle;
-  int mobileappport = 20001;
 
-  const int socket = usbmuxd_connect(handle,mobileappport);
+  const int socket = usbmuxd_connect(handle,myport);
   if (socket < 0) {
     LOG4CXX_ERROR(logger_, "Failed to conncet");
     *error = new ConnectError();
-    return false;
+	return false;
   }
 
-  printf("UsbmuxdSocketConnection::Establish connect success fd:%d\n",socket);
+  printf("\nconnect port:%d success handle:%d,fd:%d\n",myport,handle,socket);
 
   set_socket(socket);
   Usbmuxd_device->applications_[tmp].socket = socket;
@@ -304,6 +315,11 @@ void UsbmuxdSocketConnection::Transmit() {
   
   do {
     bytes_read = read(read_fd_, buffer, sizeof(buffer));
+    DeviceSptr device = controller()->FindDevice(device_handle());
+    if (!device.valid()) {
+  	  Abort();
+	  return;
+    }
   } while (bytes_read > 0);
   if ((bytes_read < 0) && (EAGAIN != errno)) {
     LOG4CXX_ERROR_WITH_ERRNO(logger_, "Failed to clear notification pipe");
@@ -471,7 +487,6 @@ int  UsbmuxdSocketConnection::usbmuxd_send_data(int connect_sfd,uint8_t* sendsrc
   nrealsendlen += nsrcsendlen;	
 
   ::send(socket_,srealsenddata, nrealsendlen, 0);
-
   delete srealsenddata;
   return nsrcsendlen;
 }
@@ -498,7 +513,6 @@ bool UsbmuxdSocketConnection::Receive() {
       bytes_read = usbmuxd_recv_data(socket_,buffer,bytes_data);
       needrecvsize -= bytes_read;
     }
-	
     if (bytes_read > 0) {
       LOG4CXX_DEBUG(logger_,
                     "Received " << bytes_read << " bytes for connection "
@@ -578,7 +592,7 @@ UsbmuxdServerOiginatedSocketConnection::UsbmuxdServerOiginatedSocketConnection(
     const DeviceUID& device_uid,
     const ApplicationHandle& app_handle,
     TransportAdapterController* controller)
-    : UsbmuxdSocketConnection(device_uid, app_handle, controller) {}
+    : UsbmuxdSocketConnection(device_uid, app_handle, controller,(unsigned int)20001) {}
 
 UsbmuxdServerOiginatedSocketConnection::~UsbmuxdServerOiginatedSocketConnection() {}
 

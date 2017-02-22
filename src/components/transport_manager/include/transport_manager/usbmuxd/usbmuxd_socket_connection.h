@@ -64,8 +64,9 @@ class UsbmuxdSocketConnection : public Connection {
    * @param controller Pointer to the Usbmuxd device adapter controller.
    */
   UsbmuxdSocketConnection(const DeviceUID& device_uid,
-                      const ApplicationHandle& app_handle,
-                      TransportAdapterController* controller);
+										   const ApplicationHandle& app_handle,
+										   TransportAdapterController* controller,
+										   const int appport);
 
   /**
    * @brief Destructor.
@@ -173,6 +174,7 @@ private:
  mutable sync_primitives::Lock frames_to_send_mutex_;
 
  int socket_;
+ const int myport;
  bool terminate_flag_;
  bool unexpected_disconnect_;
  const DeviceUID device_uid_;

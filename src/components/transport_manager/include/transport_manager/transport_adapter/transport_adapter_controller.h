@@ -208,6 +208,7 @@ class TransportAdapterController {
                               const DataSendError&) = 0;
   
  virtual  bool IsSameDevice(char* udid)= 0;
+ virtual  void RemoveUnFindDevice(std::vector<DeviceUID> DeviceList)= 0; 
 };
 
 }  // namespace transport_adapter
