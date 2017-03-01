@@ -799,7 +799,6 @@ void TransportAdapterImpl::RemoveFinalizedConnection(
   connections_.erase(it_conn);
   
   if(this->GetDeviceType() == USBMUXD){
-	  puts("=RemoveFinalizedConnection=\n");
   	RemoveDevice(device_handle);
   }
 }
@@ -999,8 +998,10 @@ void TransportAdapterImpl::RunAppOnDevice(const DeviceUID& device_uid,
   device->LaunchApp(bundle_id);
 }
 
-void TransportAdapterImpl::RemoveDevice(const DeviceUID& device_handle) {	
-  printf("RemoveDevice:%s\n",device_handle.c_str());
+void TransportAdapterImpl::RemoveDevice(const DeviceUID& device_handle) {
+  #ifdef USBMUXD_DEBUG	
+    printf("RemoveDevice:%s\n",device_handle.c_str());
+  #endif
   LOG4CXX_AUTO_TRACE(logger_);
   LOG4CXX_DEBUG(logger_, "Device_handle: " << &device_handle);
   sync_primitives::AutoLock locker(devices_mutex_);
@@ -1031,18 +1032,15 @@ void TransportAdapterImpl::RemoveUnFindDevice(std::vector<DeviceUID> DeList) {
 	   
   for (std::vector<DeviceUID>::iterator it = devices.begin(); it != devices.end();++it) {
   	 DeviceUID device_handle = *it;
-	 //ApplicationHandle app_handle = it->second;
   	 find = false;
 	 for (std::vector<DeviceUID>::iterator de = DeList.begin(); de != DeList.end(); ++de){
 		DeviceUID device_handle1 = *de;
-		//printf("device_handle1:%s\t,device_handle:%s\t%d\t%d\n",device_handle1.c_str(),device_handle.c_str(),device_handle1 == device_handle,(int)DeviceList.size());
     	if(device_handle1 == device_handle){
 			find = true;
             break;
 		}
 	 }
 	 if(!find){
-	 	puts("=RemoveUnFindDevice=\n");
 		RemoveDevice(device_handle);
 	 }
   }

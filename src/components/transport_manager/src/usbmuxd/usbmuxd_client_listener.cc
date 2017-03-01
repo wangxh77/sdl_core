@@ -157,19 +157,33 @@ void UsbmuxdClientListener::Loop() {
   int devlist_count = 0,ndevicenum = 0;
   usbmuxd_device_info_t device_info ;
   //libusbmuxd_set_debug_level(3) ;
+  time_t nlasttime = 0,nnowtime = 0;
+  nlasttime = nnowtime = time(NULL);
   while (!thread_stop_requested_) {
+	nnowtime = time(NULL);
 	memset(&device_info,0,sizeof(usbmuxd_device_info_t));
 	usbmuxd_device_info_t *devicelist = NULL;	
 	devlist_count = usbmuxd_get_device_list(&devicelist);
+	if((devlist_count < 1) && ((nnowtime - nlasttime) > 1)){
+	  nlasttime = nnowtime;
+	  #ifdef USBMUXD_DEBUG
+	    printf("Failed to get usbmuxd device:%d\n",devlist_count);	
+	  #endif
+          usleep(100);
+	  continue;
+	}
+	else{
+	  nlasttime = nnowtime;
+	}
 	//printf("devlist_count %d\n",devlist_count);
 	std::vector<DeviceUID> DeviceList;
 	for(ndevicenum = 0;ndevicenum < devlist_count;ndevicenum ++){				
- 	  int appport = 20010;
+ 	  int appport = 20001;
    	  device_info =  devicelist[ndevicenum];
    	  char uid[100] = "";
    	  char device_name[100] = "";
 
-	  for(;appport < 20003;appport ++){
+	  for(;appport < 20004;appport ++){
 		  sprintf(uid,"%d",appport);
 		  memcpy(uid+strlen(uid),device_info.udid,strlen(device_info.udid));
 		  sprintf(device_name,"%s",uid);
@@ -197,7 +211,6 @@ void UsbmuxdClientListener::Loop() {
 	usbmuxd_device_list_free(&devicelist);
 	devicelist = NULL;
 	usleep(100);
-	//sleep(1);
   }
 }
 

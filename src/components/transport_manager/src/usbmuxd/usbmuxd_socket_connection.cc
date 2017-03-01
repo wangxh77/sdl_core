@@ -30,7 +30,6 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-
 #include "transport_manager/usbmuxd/usbmuxd_socket_connection.h"
 
 #include <algorithm>
@@ -199,36 +198,35 @@ void UsbmuxdSocketConnection::threadMain() {
   time_t nlasttime = 0,nnowtime = 0;
   nlasttime = nnowtime = time(NULL);
 
+  LOG4CXX_DEBUG(logger_, "Connection established");
   while (!terminate_flag_) {
     nnowtime = time(NULL);
-	
-	DeviceSptr device = controller()->FindDevice(device_handle());
-	if (!device.valid()) {
-		Abort();
-	}
-	if (!Establish(&connect_error)) {
-	  LOG4CXX_ERROR(logger_, "Connection Establish failed");
-	  delete connect_error;
-	  if((nnowtime - nlasttime) > TIMEOUT_ONECONNECT){
-	  	  Abort();
-		  printf("connect timeout\n");
-		  return;
-	  }
-	  else {
-	     usleep(100);
-	  }	
-	}
-	else{
-		break;
-	}
+    DeviceSptr device = controller()->FindDevice(device_handle());
+    if (!device.valid()) {
+      Abort();
+    }
+
+    if (!Establish(&connect_error)) {
+      if((nnowtime - nlasttime) > 1){
+        #ifdef USBMUXD_DEBUG
+      	  printf("myport:%d Failed to conncet\n",myport);
+        #endif
+        nlasttime = nnowtime;
+      }
+      delete connect_error;	  
+      usleep(100);	
+    }
+    else{
+      break;
+    }
   }
-  LOG4CXX_DEBUG(logger_, "Connection established");
+  
   const DeviceUID device_uid_1 = device_handle();
   controller_->ConnectDone(device_handle(), application_handle());
   while (!terminate_flag_) {	
     DeviceSptr device = controller()->FindDevice(device_handle());
     if (!device.valid()) {
-  	 	Abort();
+      Abort();
     }
     Transmit();
   }
@@ -246,10 +244,12 @@ void UsbmuxdSocketConnection::threadMain() {
 }
 
 bool UsbmuxdSocketConnection::Establish(ConnectError** error) {
+  std::string str;
   DeviceSptr device = controller()->FindDevice(device_handle());
   if (!device.valid()) {
     LOG4CXX_ERROR(logger_, "Device " << device_handle() << " not found");
     *error = new ConnectError();
+    Abort();
     return false;
   }
 
@@ -259,12 +259,13 @@ bool UsbmuxdSocketConnection::Establish(ConnectError** error) {
 
   const int socket = usbmuxd_connect(handle,myport);
   if (socket < 0) {
-    LOG4CXX_ERROR(logger_, "Failed to conncet");
     *error = new ConnectError();
-	return false;
+    return false;
   }
 
-  printf("\nconnect port:%d success handle:%d,fd:%d\n",myport,handle,socket);
+  #ifdef USBMUXD_DEBUG
+    printf("\nconnect port:%d success handle:%d\n",myport,handle);
+  #endif
 
   set_socket(socket);
   Usbmuxd_device->applications_[tmp].socket = socket;
