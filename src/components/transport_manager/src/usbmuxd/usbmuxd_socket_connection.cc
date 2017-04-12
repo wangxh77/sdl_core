@@ -57,17 +57,21 @@ extern "C"{
 }
 #endif
 
-
+//#ifndef USBMUXD_DEBUG
+//#define USBMUXD_DEBUG
+//#endif
 namespace transport_manager {
 namespace transport_adapter {
 
 CREATE_LOGGERPTR_GLOBAL(logger_, "TransportManager")
 	
-struct usbmuxd_header_real {	
+struct usbmuxd_header_real {
+	uint32_t headerframe;	//&&&&
 	uint32_t version;	// protocol version 
 	uint32_t message;	// message type 
 	uint32_t tag;		// responses to this query will echo back this tag	
 	uint32_t length;	
+	
 } __attribute__((__packed__));
 
 UsbmuxdSocketConnection::UsbmuxdSocketConnection(const DeviceUID& device_uid,
@@ -93,486 +97,625 @@ UsbmuxdSocketConnection::UsbmuxdSocketConnection(const DeviceUID& device_uid,
 }
 		
 UsbmuxdSocketConnection::~UsbmuxdSocketConnection() {
-  LOG4CXX_AUTO_TRACE(logger_);
-  Disconnect();
-  thread_->join();
-  delete thread_->delegate();
-  threads::DeleteThread(thread_);
-  
-  if (-1 != read_fd_) {
-    close(read_fd_);
-  }
-  if (-1 != write_fd_) {
-    close(write_fd_);
-  }
+	LOG4CXX_AUTO_TRACE(logger_);
+	Disconnect();
+	thread_->join();
+	delete thread_->delegate();
+	threads::DeleteThread(thread_);
+
+	if (-1 != read_fd_) {
+		close(read_fd_);
+	}
+	if (-1 != write_fd_) {
+		close(write_fd_);
+	}
 }
 void UsbmuxdSocketConnection::Abort() {
-  LOG4CXX_AUTO_TRACE(logger_);
-  unexpected_disconnect_ = true;
-  terminate_flag_ = true;
+	LOG4CXX_AUTO_TRACE(logger_);
+	unexpected_disconnect_ = true;
+	terminate_flag_ = true;
 }
 
 TransportAdapter::Error UsbmuxdSocketConnection::Start() {
-  LOG4CXX_AUTO_TRACE(logger_);
-  int fds[2];
-  const int pipe_ret = pipe(fds);
-  if (0 == pipe_ret) {
-    LOG4CXX_DEBUG(logger_, "pipe created");
-    read_fd_ = fds[0];
-    write_fd_ = fds[1];
-  } else {
-    LOG4CXX_ERROR(logger_, "pipe creation failed");
-    return TransportAdapter::FAIL;
-  }
-  const int fcntl_ret =
-      fcntl(read_fd_, F_SETFL, fcntl(read_fd_, F_GETFL) | O_NONBLOCK);
-  if (0 != fcntl_ret) {
-    LOG4CXX_ERROR(logger_, "fcntl failed");
-    return TransportAdapter::FAIL;
-  }
+	LOG4CXX_AUTO_TRACE(logger_);
+	int fds[2];
+	const int pipe_ret = pipe(fds);
+	if (0 == pipe_ret) {
+		LOG4CXX_DEBUG(logger_, "pipe created");
+		read_fd_ = fds[0];
+		write_fd_ = fds[1];
+	} 
+	else {
+		LOG4CXX_ERROR(logger_, "pipe creation failed");
+		return TransportAdapter::FAIL;
+	}
+	const int fcntl_ret = fcntl(read_fd_, F_SETFL, fcntl(read_fd_, F_GETFL) | O_NONBLOCK);
+	if (0 != fcntl_ret) {
+		LOG4CXX_ERROR(logger_, "fcntl failed");
+		return TransportAdapter::FAIL;
+	}
 
-  if (!thread_->start()) {
-    LOG4CXX_ERROR(logger_, "thread creation failed");
-    return TransportAdapter::FAIL;
-  }
-  LOG4CXX_INFO(logger_, "thread created");
-  return TransportAdapter::OK;
+	if (!thread_->start()) {
+		LOG4CXX_ERROR(logger_, "thread creation failed");
+		return TransportAdapter::FAIL;
+	}
+
+	LOG4CXX_INFO(logger_, "thread created");
+	return TransportAdapter::OK;
 }
 
 void UsbmuxdSocketConnection::Finalize() {
-  LOG4CXX_AUTO_TRACE(logger_);
-  if (unexpected_disconnect_) {
-    LOG4CXX_DEBUG(logger_, "unexpected_disconnect");
-    controller_->ConnectionAborted(
-        device_handle(), application_handle(), CommunicationError());
-  } else {
-    LOG4CXX_DEBUG(logger_, "not unexpected_disconnect");
-    controller_->ConnectionFinished(device_handle(), application_handle());
-  }
-  close(socket_);
+	LOG4CXX_AUTO_TRACE(logger_);
+	if (unexpected_disconnect_) {
+		LOG4CXX_DEBUG(logger_, "unexpected_disconnect");
+		controller_->ConnectionAborted(
+	    	device_handle(), application_handle(), CommunicationError());
+	} else {
+		LOG4CXX_DEBUG(logger_, "not unexpected_disconnect");
+		controller_->ConnectionFinished(device_handle(), application_handle());
+	}
+	close(socket_);
 }
 
 TransportAdapter::Error UsbmuxdSocketConnection::Notify() const {
-  LOG4CXX_AUTO_TRACE(logger_);
-  if (-1 == write_fd_) {
-    LOG4CXX_ERROR_WITH_ERRNO(
-        logger_, "Failed to wake up connection thread for connection " << this);
-    LOG4CXX_TRACE(logger_, "exit with TransportAdapter::BAD_STATE");
-    return TransportAdapter::BAD_STATE;
-  }
-  uint8_t c = 0;
-  if (1 != write(write_fd_, &c, 1)) {
-    LOG4CXX_ERROR_WITH_ERRNO(
-        logger_, "Failed to wake up connection thread for connection " << this);
-    return TransportAdapter::FAIL;
-  }
-  return TransportAdapter::OK;
+	LOG4CXX_AUTO_TRACE(logger_);
+	if (-1 == write_fd_) {
+		LOG4CXX_ERROR_WITH_ERRNO(
+	    logger_, "Failed to wake up connection thread for connection " << this);
+		LOG4CXX_TRACE(logger_, "exit with TransportAdapter::BAD_STATE");
+		return TransportAdapter::BAD_STATE;
+	}
+	uint8_t c = 0;
+	if (1 != write(write_fd_, &c, 1)) {
+		LOG4CXX_ERROR_WITH_ERRNO(
+	    logger_, "Failed to wake up connection thread for connection " << this);
+		return TransportAdapter::FAIL;
+	}
+	return TransportAdapter::OK;
 }
 
 TransportAdapter::Error UsbmuxdSocketConnection::SendData(
     ::protocol_handler::RawMessagePtr message) {
     
-  LOG4CXX_AUTO_TRACE(logger_);
-  sync_primitives::AutoLock auto_lock(frames_to_send_mutex_);
-  frames_to_send_.push(message);
-  return Notify();
+	LOG4CXX_AUTO_TRACE(logger_);
+	sync_primitives::AutoLock auto_lock(frames_to_send_mutex_);
+	frames_to_send_.push(message);
+	return Notify();
 }
 
 TransportAdapter::Error UsbmuxdSocketConnection::Disconnect() {	
-  LOG4CXX_AUTO_TRACE(logger_);
-  terminate_flag_ = true;
-  return Notify();
+	LOG4CXX_AUTO_TRACE(logger_);
+	terminate_flag_ = true;
+	return Notify();
 }
 
 
 bool UsbmuxdSocketConnection::IsFramesToSendQueueEmpty() const {
-  // Check Frames queue is empty or not
-  sync_primitives::AutoLock auto_lock(frames_to_send_mutex_);
-  return frames_to_send_.empty();
+	// Check Frames queue is empty or not
+	sync_primitives::AutoLock auto_lock(frames_to_send_mutex_);
+	return frames_to_send_.empty();
 }
 
 void UsbmuxdSocketConnection::threadMain() {
-  LOG4CXX_AUTO_TRACE(logger_);
-  controller_->ConnectionCreated(this, device_handle(), application_handle());
-  ConnectError* connect_error = NULL;
-  time_t nlasttime = 0,nnowtime = 0;
-  nlasttime = nnowtime = time(NULL);
+	LOG4CXX_AUTO_TRACE(logger_);
+	controller_->ConnectionCreated(this, device_handle(), application_handle());
+	ConnectError* connect_error = NULL;
+	time_t nlasttime = 0,nnowtime = 0;
+	nlasttime = nnowtime = time(NULL);
 
-  LOG4CXX_DEBUG(logger_, "Connection established");
-  while (!terminate_flag_) {
-    nnowtime = time(NULL);
-    DeviceSptr device = controller()->FindDevice(device_handle());
-    if (!device.valid()) {
-      Abort();
-    }
+	LOG4CXX_DEBUG(logger_, "Connection established");
+	while (!terminate_flag_) {
+		nnowtime = time(NULL);
+		DeviceSptr device = controller()->FindDevice(device_handle());
+		if (!device.valid()) {
+			Abort();
+		}
 
-    if (!Establish(&connect_error)) {
-      if((nnowtime - nlasttime) > 1){
-        #ifdef USBMUXD_DEBUG
-      	  printf("myport:%d Failed to conncet\n",myport);
-        #endif
-        nlasttime = nnowtime;
-      }
-      delete connect_error;	  
-      usleep(100);	
-    }
-    else{
-      break;
-    }
-  }
-  
-  const DeviceUID device_uid_1 = device_handle();
-  controller_->ConnectDone(device_handle(), application_handle());
-  while (!terminate_flag_) {	
-    DeviceSptr device = controller()->FindDevice(device_handle());
-    if (!device.valid()) {
-      Abort();
-    }
-    Transmit();
-  }
-  
-  LOG4CXX_DEBUG(logger_, "Connection is to finalize");
-  Finalize();
-  sync_primitives::AutoLock auto_lock(frames_to_send_mutex_);
-  while (!frames_to_send_.empty() && !terminate_flag_) {
-    LOG4CXX_INFO(logger_, "removing message");
-    ::protocol_handler::RawMessagePtr message = frames_to_send_.front();
-    frames_to_send_.pop();
-    controller_->DataSendFailed(
-        device_handle(), application_handle(), message, DataSendError());
-  }
+		if (!Establish(&connect_error)) {
+			if((nnowtime - nlasttime) > 1){
+				nlasttime = nnowtime;
+			}
+			delete connect_error;	  
+			usleep(100);	
+		}
+		else{
+		  	break;
+		}
+	}
+
+	const DeviceUID device_uid_1 = device_handle();
+	controller_->ConnectDone(device_handle(), application_handle());
+	while (!terminate_flag_) {	
+		DeviceSptr device = controller()->FindDevice(device_handle());
+		if (!device.valid()) {
+	  		Abort();
+		}
+		Transmit();
+	}
+
+	LOG4CXX_DEBUG(logger_, "Connection is to finalize");
+	Finalize();
+	sync_primitives::AutoLock auto_lock(frames_to_send_mutex_);
+	while (!frames_to_send_.empty() && !terminate_flag_) {
+		LOG4CXX_INFO(logger_, "removing message");
+		::protocol_handler::RawMessagePtr message = frames_to_send_.front();
+		frames_to_send_.pop();
+		controller_->DataSendFailed(
+		    device_handle(), application_handle(), message, DataSendError());
+	}
 }
 
 bool UsbmuxdSocketConnection::Establish(ConnectError** error) {
-  std::string str;
-  DeviceSptr device = controller()->FindDevice(device_handle());
-  if (!device.valid()) {
-    LOG4CXX_ERROR(logger_, "Device " << device_handle() << " not found");
-    *error = new ConnectError();
-    Abort();
-    return false;
-  }
+	std::string str;
+	DeviceSptr device = controller()->FindDevice(device_handle());
+	if (!device.valid()) {
+		LOG4CXX_ERROR(logger_, "Device " << device_handle() << " not found");
+		*error = new ConnectError();
+		Abort();
+		return false;
+	}
 
-  UsbmuxdDevice* Usbmuxd_device = static_cast<UsbmuxdDevice*>(device.get());
-  ApplicationHandle tmp = application_handle();
-  uint32_t handle = Usbmuxd_device->applications_[tmp].apphandle;
+	UsbmuxdDevice* Usbmuxd_device = static_cast<UsbmuxdDevice*>(device.get());
+	ApplicationHandle tmp = application_handle();
+	uint32_t handle = Usbmuxd_device->applications_[tmp].apphandle;
 
-  const int socket = usbmuxd_connect(handle,myport);
-  if (socket < 0) {
-    *error = new ConnectError();
-    return false;
-  }
+	const int socket = usbmuxd_connect(handle,myport);
+	if (socket < 0) {
+		*error = new ConnectError();
+		return false;
+	}
+#ifdef USBMUXD_DEBUG
+	printf("connect port:%d success\n",myport);
+#endif
+	set_socket(socket);
+	Usbmuxd_device->applications_[tmp].socket = socket;
 
-  #ifdef USBMUXD_DEBUG
-    printf("\nconnect port:%d success handle:%d\n",myport,handle);
-  #endif
-
-  set_socket(socket);
-  Usbmuxd_device->applications_[tmp].socket = socket;
-  
-  return true;
+	return true;
 }
 
 void UsbmuxdSocketConnection::Transmit() {
- LOG4CXX_AUTO_TRACE(logger_);
-  const nfds_t kPollFdsSize = 2;
-  pollfd poll_fds[kPollFdsSize];
-  poll_fds[0].fd = socket_;
+	LOG4CXX_AUTO_TRACE(logger_);
+	const nfds_t kPollFdsSize = 2;
+	pollfd poll_fds[kPollFdsSize];
+	poll_fds[0].fd = socket_;
 
-  const bool is_queue_empty_on_poll = IsFramesToSendQueueEmpty();
+	const bool is_queue_empty_on_poll = IsFramesToSendQueueEmpty();
 
-  poll_fds[0].events =
-      POLLIN | POLLPRI | (is_queue_empty_on_poll ? 0 : POLLOUT);
-  poll_fds[1].fd = read_fd_;
-  poll_fds[1].events = POLLIN | POLLPRI;
+	poll_fds[0].events = POLLIN | POLLPRI | (is_queue_empty_on_poll ? 0 : POLLOUT);
+	poll_fds[1].fd = read_fd_;
+	poll_fds[1].events = POLLIN | POLLPRI;
 
-  LOG4CXX_DEBUG(logger_, "poll " << this);
-  if (-1 == poll(poll_fds, kPollFdsSize, -1)) {
-    LOG4CXX_ERROR_WITH_ERRNO(logger_, "poll failed for connection " << this);
-    Abort();
-    return;
-  }
-  LOG4CXX_DEBUG(logger_,
-                "poll is ok " << this << " revents0: " << std::hex
-                              << poll_fds[0].revents << " revents1:" << std::hex
-                              << poll_fds[1].revents);
-  // error check
-  if (0 != (poll_fds[1].revents & (POLLERR | POLLHUP | POLLNVAL))) {
-    LOG4CXX_ERROR(logger_,
-                  "Notification pipe for connection " << this << " terminated");
-    Abort();
-    return;
-  }
+	LOG4CXX_DEBUG(logger_, "poll " << this);
+	if (-1 == poll(poll_fds, kPollFdsSize, -1)) {
+		LOG4CXX_ERROR_WITH_ERRNO(logger_, "poll failed for connection " << this);
+		Abort();
+		return;
+	}
+	LOG4CXX_DEBUG(logger_,
+	            "poll is ok " << this << " revents0: " << std::hex
+	                          << poll_fds[0].revents << " revents1:" << std::hex
+	                          << poll_fds[1].revents);
+	// error check
+	if (0 != (poll_fds[1].revents & (POLLERR | POLLHUP | POLLNVAL))) {
+		LOG4CXX_ERROR(logger_,
+		              "Notification pipe for connection " << this << " terminated");
+		Abort();
+		return;
+	}
 
-  if (poll_fds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
-    LOG4CXX_WARN(logger_, "Connection " << this << " terminated");
-    Abort();
-    return;
-  }
+	if (poll_fds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+		LOG4CXX_WARN(logger_, "Connection " << this << " terminated");
+		Abort();
+		return;
+	}
 
-  // clear notifications
-  char buffer[256];
-  ssize_t bytes_read = -1;
-  
-  do {
-    bytes_read = read(read_fd_, buffer, sizeof(buffer));
-    DeviceSptr device = controller()->FindDevice(device_handle());
-    if (!device.valid()) {
-  	  Abort();
-	  return;
-    }
-  } while (bytes_read > 0);
-  if ((bytes_read < 0) && (EAGAIN != errno)) {
-    LOG4CXX_ERROR_WITH_ERRNO(logger_, "Failed to clear notification pipe");
-    LOG4CXX_ERROR_WITH_ERRNO(logger_, "poll failed for connection " << this);
-    Abort();
-    return;
-  }
+	// clear notifications
+	char buffer[256];
+	ssize_t bytes_read = -1;
 
-  const bool is_queue_empty = IsFramesToSendQueueEmpty();
-  // Send data if possible
-  if (!is_queue_empty && (poll_fds[0].revents | POLLOUT)) {
-    LOG4CXX_DEBUG(logger_, "frames_to_send_ not empty() ");
+	do {
+		bytes_read = read(read_fd_, buffer, sizeof(buffer));
+		DeviceSptr device = controller()->FindDevice(device_handle());
+		if (!device.valid()) {
+		  	Abort();
+			return;
+		}
+	} while (bytes_read > 0);
+	if ((bytes_read < 0) && (EAGAIN != errno)) {
+		LOG4CXX_ERROR_WITH_ERRNO(logger_, "Failed to clear notification pipe");
+		LOG4CXX_ERROR_WITH_ERRNO(logger_, "poll failed for connection " << this);
+		Abort();
+		return;
+	}
 
-    // send data
-    const bool send_ok = Send();
-    if (!send_ok) {
-      LOG4CXX_ERROR(logger_, "Send() failed ");
-      Abort();
-      return;
-    }
-  }
+	const bool is_queue_empty = IsFramesToSendQueueEmpty();
+	// Send data if possible
+	if (!is_queue_empty && (poll_fds[0].revents | POLLOUT)) {
+		LOG4CXX_DEBUG(logger_, "frames_to_send_ not empty() ");
 
-  // receive data
-  
-  if (poll_fds[0].revents & (POLLIN | POLLPRI)) {
-    const bool receive_ok = Receive();
-    if (!receive_ok) {
-      LOG4CXX_ERROR(logger_, "Receive() failed ");
-      Abort();
-      return;
-    }
-  }
+		// send data
+		const bool send_ok = Send();
+		if (!send_ok) {
+			LOG4CXX_ERROR(logger_, "Send() failed ");
+			Abort();
+			return;
+		}
+	}
+
+	// receive data
+
+	if (poll_fds[0].revents & (POLLIN | POLLPRI)) {
+		const bool receive_ok = Receive();
+		if (!receive_ok) {
+			LOG4CXX_ERROR(logger_, "Receive() failed ");
+			Abort();
+			return;
+		}
+	}
   
 }
 
 /*recv head*/
 int UsbmuxdSocketConnection::usbmuxd_recv_head(int connect_sfd){	
-  if(connect_sfd < 1){		
-  	printf("connect_sfd is error,not recv head data\n");		
- 	return -1;	
-  }		
-  
-  char buffer[50] = "",buffertmp[50] = "";			  
-  int nlen = 0,nindex = 0,nreallen = 0,tmp = 0;	
-  int recv_bytes = 0,nlength = 0;	
-  time_t nlasttime = 0,nnowtime = 0;
-  usbmuxd_header_real hdr;	
-  memset(&hdr,0,sizeof(usbmuxd_header_real));	
-  recv_bytes = recv(connect_sfd, &hdr, sizeof(usbmuxd_header_real),MSG_DONTWAIT);	
-  if (recv_bytes <= 0){			
-    return recv_bytes;
-  }
-  else if(recv_bytes < ((int)sizeof(usbmuxd_header_real))){
-    nlasttime = nnowtime = time(NULL);
-    while(recv_bytes < ((int)sizeof(usbmuxd_header_real))){
-      nnowtime = time(NULL);
-      tmp = sizeof(usbmuxd_header_real)-recv_bytes;
-      nlen = recv(connect_sfd, buffer, tmp, MSG_DONTWAIT);	
-      if(nlen > 0){				
-      	memcpy(&hdr+recv_bytes,buffer,nlen);	
-      	recv_bytes += nlen;		
-      }
-      else{
-      	usleep(10);
-      }
-      if((nnowtime - nlasttime) > 3)
-      	break;
-      }
-      if(recv_bytes < ((int)sizeof(usbmuxd_header_real))){	
-      	printf("recv head size is too small %d ,need size:%d\n",recv_bytes,(int)sizeof(hdr));	
-      	return -1;	
-      }
-  }		
+	if(connect_sfd < 1){		
+		LOG4CXX_ERROR(logger_,"connect_sfd is error,not recv head data\n");		
+		return -1;	
+	}		
 
-  memset(buffer,0,50);
-  nlength = hdr.length;			
-  sprintf(buffertmp,"%X",nlength);			
-  nlength = 0;			
-  nlen = strlen(buffertmp);			
-  for(nindex = nlen-2;nindex >= 0;nindex -= 2){				
-  	memcpy(&buffer[nreallen],&buffertmp[nindex],2);				
-  	nreallen += 2;			
-  }			
-  if(nindex == -1){						
-  	buffer[nreallen ++] = '0';				
-  	buffer[nreallen ++] = buffertmp[0];			
-  }			
-  for(nindex = 0;nindex < nreallen;nindex ++){				
-    if(buffer[nindex] >= '0' && buffer[nindex] <= '9')					
-   	  nlength = nlength*0x10 + (buffer[nindex]-'0');				
-  	else					
-   	  nlength = nlength*0x10 + (buffer[nindex]-'A' + 0x0A);			
-  }	
-  
-  return nlength;		
+	char buffer[50] = "",buffertmp[50] = "";			  
+	int nlen = 0,nindex = 0,tmp = 0;	
+	int recv_bytes = 0,nlength = 0,nreallen = 0,nneedrecvheadlen = 0,headdatalen = 0;
+	unsigned int unlength = 0;	
+	time_t nlasttime = 0,nnowtime = 0;
+	usbmuxd_header_real hdr;	
 
+recv_head:
+	memset(&hdr,0,sizeof(usbmuxd_header_real));
+   	nneedrecvheadlen = sizeof(usbmuxd_header_real);
+
+	if(recvbufferlen_nextframe > 0 && recvbufferlen_nextframe <= (int)sizeof(usbmuxd_header_real)){
+		memcpy(&hdr,recv_buffer_nextframe,recvbufferlen_nextframe);
+		nneedrecvheadlen = sizeof(usbmuxd_header_real) - recvbufferlen_nextframe;
+		headdatalen = recvbufferlen_nextframe;
+		recvbufferlen_nextframe = 0;
+		memset(recv_buffer_nextframe,0,RECVBUFFERLEN);
+	}
+	else if(recvbufferlen_nextframe > (int)sizeof(usbmuxd_header_real)){
+		memcpy(&hdr,recv_buffer_nextframe,sizeof(usbmuxd_header_real));
+		nneedrecvheadlen = 0;
+		headdatalen = sizeof(usbmuxd_header_real);
+	}
+  
+	recv_bytes = recv(connect_sfd, &hdr+headdatalen, nneedrecvheadlen,MSG_DONTWAIT);	
+	if (recv_bytes <= 0){			
+		return recv_bytes;
+	}
+  	else if(recv_bytes < nneedrecvheadlen){
+    	nlasttime = nnowtime = time(NULL);
+		while((recv_bytes < nneedrecvheadlen)  && (terminate_flag_ == false)){
+			nnowtime = time(NULL);
+			tmp = nneedrecvheadlen - recv_bytes;
+			nlen = recv(connect_sfd, buffer, tmp, MSG_DONTWAIT);	
+			if(nlen > 0){				
+				memcpy(&hdr+recv_bytes,buffer,nlen);	
+				recv_bytes += nlen;
+				nlasttime = nnowtime;		
+		  	}	  
+		  	else if(nlen < 0){
+				if((nnowtime - nlasttime) > 3){
+					LOG4CXX_ERROR(logger_,"recv head data timeout");
+					break;
+				}
+		
+        		usleep(10);
+	    		continue;
+      		}
+      		else{
+				LOG4CXX_ERROR(logger_,"recv back 0,connect is abort");
+				return nlen;
+      		}
+    	}
+	
+    	if(recv_bytes < nneedrecvheadlen){	
+      		LOG4CXX_ERROR(logger_,"recv head size is too small");	
+      		return -1;	
+		}
+	}		
+
+	//Check head
+	if(hdr.headerframe != 0x26262626){
+		LOG4CXX_ERROR(logger_,"recv head error");
+		memset(recv_buffer_nextframe,0,RECVBUFFERLEN);
+		recvbufferlen_nextframe = 0;
+		headdatalen = 0;
+		if(terminate_flag_ == true){
+		  return -1;
+		} 
+		goto recv_head;
+	}
+
+	if(recvbufferlen_nextframe > (int)sizeof(usbmuxd_header_real)){
+		memcpy(recv_buffer,recv_buffer_nextframe,recvbufferlen_nextframe - sizeof(usbmuxd_header_real));
+		recvbufferlen = recvbufferlen_nextframe - sizeof(usbmuxd_header_real);
+	}
+	recvbufferlen_nextframe = 0;
+	memset(recv_buffer_nextframe,0,RECVBUFFERLEN);
+
+	nlength = hdr.length;	
+	unlength = nlength;		
+	nreallen = unlength/0x1000000 ;
+	nreallen += ((unlength%0x1000000)/0x10000)*0x100 ;
+	nreallen += ((unlength%0x10000)/0x100)*0x10000 ;
+	nreallen += ((unlength%0x100))*0x1000000;
+	sprintf(buffertmp,"%08X",nreallen);		
+			
+	nlength = 0;			
+	for(nindex = 0;nindex < 8;nindex ++){				
+		if(buffertmp[nindex] >= '0' && buffertmp[nindex] <= '9')					
+	  		nlength = nlength*0x10 + (buffertmp[nindex]-'0');				
+		else					
+	  		nlength = nlength*0x10 + (buffertmp[nindex]-'A' + 0x0A);			
+	}		
+
+	return nlength;		
 }	
 
 /*recv data*/
-int UsbmuxdSocketConnection::usbmuxd_recv_data(int connect_sfd,uint8_t *data,int datasize){	
-  int result = 0;	
-  int recv_bytes = 0,recvsize = 0;	
-  time_t lasttime,nowtime;
+int UsbmuxdSocketConnection::usbmuxd_recv_data(int connect_sfd,char *data,int datasize){		
+	int recv_bytes = 0,recvsize = 0;	
+	time_t lasttime,nowtime;
 
-  lasttime = nowtime = time(NULL);
-  do {		
-  	  nowtime = time(NULL);
-	  recv_bytes = recv(connect_sfd,data+recvsize, datasize-recvsize, MSG_DONTWAIT);  
-	  if(result != 0)			
-	  	break;      
-	  if((nowtime - lasttime > 3)){
-		printf("Don't recv data ok in 3s\n");
-		return -1;
-	  }
-	  recvsize += recv_bytes;	
+	lasttime = nowtime = time(NULL);
 
-	  if(recvsize < datasize)
-	  	usleep(10);
-  }while(recvsize < datasize);	
-  
-  char *tmpbuffer = new char[datasize + 1];	  	
-  memcpy(tmpbuffer,data,recvsize);		
-  memset(data,0,datasize);	
-  memcpy(data,tmpbuffer,recvsize); 	   
-  
-  delete tmpbuffer; 
-  
-  return recvsize;
+	do {		
+		nowtime = time(NULL);
+		recv_bytes = recv(connect_sfd,data+recvsize, datasize-recvsize, MSG_DONTWAIT);  
+		if(recv_bytes <= 0){
+			if((nowtime - lasttime > 3)){
+				LOG4CXX_ERROR(logger_,"Don't recv data ok in 3s");
+				return -1;
+		  	}
+			
+		  	usleep(10);
+		  	continue;
+		}     
+		lasttime = nowtime;
+		recvsize += recv_bytes;	
+	} while ((recvsize < datasize) && (terminate_flag_ == false));
+	return recvsize;
 }
 
 /*send data*/
 int  UsbmuxdSocketConnection::usbmuxd_send_data(int connect_sfd,uint8_t* sendsrcdata,int nsrcsendlen){	
-  if(connect_sfd < 1 || nsrcsendlen < 1 || sendsrcdata == NULL){		
-  	return nsrcsendlen;	
-  }	
-  
-  int tmp = 0,nindex = 0;	
-  int nrealsendlen = 0;	
-  char *srealsenddata  = new char[nsrcsendlen+20];		
-  usbmuxd_header_real head;	
-  memset(&head,0,sizeof(usbmuxd_header_real));	
+	if(connect_sfd < 1 || nsrcsendlen < 1 || sendsrcdata == NULL){		
+		return nsrcsendlen;	
+	}	
 
-  head.version = 0x01000000;	
-  head.tag = 0;	
-  head.message = 0x65000000;	
-  
-  tmp = nsrcsendlen + 4;	
-  nrealsendlen = 0;	
-  memcpy(srealsenddata,&head,sizeof(usbmuxd_header_real)-4);	
-  nrealsendlen += sizeof(usbmuxd_header_real)-4;	
-  for(nindex = 3;nindex >= 0;nindex --){		
-  	srealsenddata[nrealsendlen+nindex] = tmp%0x100;		
-  	tmp /= 0x100;	
-  }	
-  nrealsendlen += 4;	
-  
-  tmp = nsrcsendlen;	
-  for(nindex = 3;nindex >= 0;nindex --){		
-  	srealsenddata[nrealsendlen+nindex] = tmp%0x100;		
-  	tmp /= 0x100;	
-  }	
-  nrealsendlen += 4;	
-  
-  memcpy(srealsenddata+nrealsendlen,sendsrcdata,nsrcsendlen);
-  nrealsendlen += nsrcsendlen;	
+	int tmp = 0,nindex = 0,nrealsendlen = 0;				
+	usbmuxd_header_real head;	
+	memset(&head,0,sizeof(usbmuxd_header_real));	
 
-  ::send(socket_,srealsenddata, nrealsendlen, 0);
-  delete srealsenddata;
-  return nsrcsendlen;
+	head.version = 0x01000000;	
+	head.tag = 0;	
+	head.message = 0x65000000;	
+
+	tmp = nsrcsendlen + 4;	
+	nrealsendlen = 0;	
+	memcpy(srealsenddata,&head,sizeof(usbmuxd_header_real)-4);	
+	nrealsendlen += sizeof(usbmuxd_header_real)-4;	
+	for(nindex = 3;nindex >= 0;nindex --){		
+		srealsenddata[nrealsendlen+nindex] = tmp%0x100;		
+		tmp /= 0x100;	
+	}	
+	nrealsendlen += 4;	
+
+	tmp = nsrcsendlen;	
+	for(nindex = 3;nindex >= 0;nindex --){		
+		srealsenddata[nrealsendlen+nindex] = tmp%0x100;		
+		tmp /= 0x100;	
+	}	
+	nrealsendlen += 4;	
+
+	memcpy(srealsenddata+nrealsendlen,sendsrcdata,nsrcsendlen);
+	nrealsendlen += nsrcsendlen;	
+	::send(socket_,srealsenddata, nrealsendlen, 0);
+
+	return nsrcsendlen;
+}
+
+bool UsbmuxdSocketConnection::explainrecvdata() {
+	if(recv_buffer == NULL || recvbufferlen <= 8){
+		LOG4CXX_ERROR(logger_,"recv data,but the data length is 0 or the data is NULL or strlen of recv_buffer < recvbufferlen");
+		return false;
+	}
+
+	bool isfindtail = false;
+	int nremainlen = 0;
+	unsigned long long llcrc = 0,llcrcb = 0;	
+
+	recvbufferlen_nextframe = 0;
+	memset(recv_buffer_nextframe,0,RECVBUFFERLEN);
+	//tail check
+	for(int nindex = recvbufferlen - 1;nindex > 4;nindex --){
+		if(recv_buffer[nindex] == '@' && recv_buffer[nindex - 1] == '@' && recv_buffer[nindex - 2] == '@' && recv_buffer[nindex - 3] == '@'){
+			isfindtail = true;
+			break;
+		}
+		nremainlen ++;
+	}
+	
+	if(isfindtail == false){
+		LOG4CXX_ERROR(logger_,"usbmuxd transfer data erro,cannot find data of tail");
+		printf("usbmuxd transfer data erro,cannot find data of tail\n");
+		recvbufferlen_nextframe = 0;
+		memset(recv_buffer_nextframe,0,RECVBUFFERLEN);	
+		return false;
+	}	  
+	//data len error				  
+	if(nremainlen > 0){				  
+		LOG4CXX_ERROR(logger_,"usbmuxd transfer data erro");		
+		printf("usbmuxd transfer data erro\n");				  
+		recvbufferlen_nextframe = nremainlen; 				  
+		memcpy(recv_buffer_nextframe,recv_buffer+recvbufferlen-nremainlen,recvbufferlen_nextframe); 				  
+		return false; 			  
+	}
+
+    	// crc check
+    	if(recvbufferlen > 8){
+		for(int i = 0;i<recvbufferlen-8;i++){			    		
+			llcrc += recv_buffer[i] & 0xFF;			    		
+			llcrc %= 0xFFFFFFFF;			  		
+		}
+		
+		llcrcb += (recv_buffer[recvbufferlen-8]&0xFF)*0x1000000;llcrcb %= 0xFFFFFFFF;
+		llcrcb += (recv_buffer[recvbufferlen-7]&0xFF)*0x10000;llcrcb %= 0xFFFFFFFF;			  		
+		llcrcb += (recv_buffer[recvbufferlen-6]&0xFF)*0x100;llcrcb %= 0xFFFFFFFF;			  		
+		llcrcb += (recv_buffer[recvbufferlen-5]&0xFF);llcrcb %= 0xFFFFFFFF;			  		
+		if(llcrc != llcrcb){			    		
+			//printf("check crc error,recv_buffer:%x,%x,%x,%x,%x,%lld\n",recv_buffer[recvbufferlen-8],recv_buffer[recvbufferlen-7],recv_buffer[recvbufferlen-6],recv_buffer[recvbufferlen-5],recv_buffer[recvbufferlen-4],llcrc);			  		
+			return true;
+		}
+		else{
+			return true;
+		}
+	}
+	else{
+		return false;
+	}
 }
 
 bool UsbmuxdSocketConnection::Receive() {
-  LOG4CXX_AUTO_TRACE(logger_);
-  uint8_t buffer[4096];
-  int bytes_read = -1;
-  int bytes_data = -1;
-  int needrecvsize = 0;
-  do {
-    memset(buffer,0,4096);
-    if(needrecvsize <= 0){
-      bytes_data = usbmuxd_recv_head(socket_);
-      bytes_read = bytes_data;
-      needrecvsize = bytes_read;
-    }
-  
-    if(needrecvsize > 0){
-      if(needrecvsize > 4096)
-    	  bytes_data = 4096;
-      else
-  	  bytes_data = needrecvsize;
-      bytes_read = usbmuxd_recv_data(socket_,buffer,bytes_data);
-      needrecvsize -= bytes_read;
-    }
-    if (bytes_read > 0) {
-      LOG4CXX_DEBUG(logger_,
-                    "Received " << bytes_read << " bytes for connection "
-                                << this);
-      ::protocol_handler::RawMessagePtr frame(
-          new protocol_handler::RawMessage(0, 0, buffer, bytes_read));
-      controller_->DataReceiveDone(
-          device_handle(), application_handle(), frame);
-    } 
-    else if (bytes_read < 0) {
-      if (EAGAIN != errno && EWOULDBLOCK != errno) {
-        LOG4CXX_ERROR_WITH_ERRNO(logger_,
-                                 "recv() failed for connection " << this);
-        return false;
-      }
-    } 
-    else {
-      LOG4CXX_WARN(logger_, "Connection " << this << " closed by remote peer");
-      return false;
-    }
-  } while (bytes_read > 0);
+	LOG4CXX_AUTO_TRACE(logger_);
+	bool explainflag = false;
+	char buffer[4096];
+	int bytes_read = -1,bytes_data = -1,needrecvsize = 0;
 
-  return true;
+	memset(recv_buffer,0,RECVBUFFERLEN);
+	memset(recv_buffer_nextframe,0,RECVBUFFERLEN);;
+	recvbufferlen = 0;
+	recvbufferlen_nextframe = 0;
+	do {
+		memset(buffer,0,4096);	
+		if(needrecvsize <= 0){
+			memset(recv_buffer,0,RECVBUFFERLEN);
+			recvbufferlen = 0;
+			bytes_data = usbmuxd_recv_head(socket_);
+			bytes_read = bytes_data;
+			needrecvsize = bytes_read;	
+			if(recvbufferlen >=  needrecvsize && needrecvsize > 0){
+				needrecvsize = 0;
+			}
+		}
+
+		if(terminate_flag_ == true){
+		  break;
+		}
+
+		if(needrecvsize > 0){
+			if(needrecvsize > 4096){
+			 	bytes_data = 4096;
+			}
+			else{
+				bytes_data = needrecvsize;
+			}
+		 
+			bytes_read = usbmuxd_recv_data(socket_,buffer,bytes_data); 
+			needrecvsize -= bytes_read;
+			memcpy(recv_buffer+recvbufferlen,buffer,bytes_read);
+			recvbufferlen += bytes_read;
+		}
+		
+		#ifdef USBMUXD_DEBUG
+			printf("recvbufferlen:%d,needrecvsize:%d,bytes_read:%d\n",recvbufferlen,needrecvsize,bytes_read);
+		#endif
+		
+		if (recvbufferlen > 0 && needrecvsize <= 0 && bytes_read > 0) {			
+			//check data
+			explainflag = explainrecvdata();			   
+			if(!explainflag || recvbufferlen <= 8){
+				LOG4CXX_ERROR(logger_,"usbmuxd data erro,Discard data");
+			}
+			else{
+				LOG4CXX_DEBUG(logger_,
+					"Received " << recvbufferlen << " bytes for connection "
+					<< this);
+			  	::protocol_handler::RawMessagePtr frame(
+			 	new protocol_handler::RawMessage(0, 0,(uint8_t*)recv_buffer, recvbufferlen-8));
+			  	controller_->DataReceiveDone(
+			    	device_handle(), application_handle(), frame);
+			}		
+
+		  	memset(recv_buffer,0,RECVBUFFERLEN);
+		 	recvbufferlen = 0;
+		} 
+		else if (bytes_read < 0) {
+			if (EAGAIN != errno && EWOULDBLOCK != errno) {
+		    	LOG4CXX_ERROR_WITH_ERRNO(logger_,
+		       		"recv() failed for connection " << this);
+		    	return false;
+		  	}
+		} 
+		else if(bytes_read == 0){
+			LOG4CXX_WARN(logger_, "Connection " << this << " closed by remote peer");
+			return false;
+		}
+	} while (bytes_read > 0 && (terminate_flag_ == false));
+
+	return true;
 }
 
 bool UsbmuxdSocketConnection::Send() {
-  LOG4CXX_AUTO_TRACE(logger_);
-  FrameQueue frames_to_send_local;
+	LOG4CXX_AUTO_TRACE(logger_);
+	FrameQueue frames_to_send_local;
+	{
+		sync_primitives::AutoLock auto_lock(frames_to_send_mutex_);
+		std::swap(frames_to_send_local, frames_to_send_);
+	}
 
-  {
-    sync_primitives::AutoLock auto_lock(frames_to_send_mutex_);
-    std::swap(frames_to_send_local, frames_to_send_);
-  }
+	size_t offset = 0;
+	while (!frames_to_send_local.empty() && (terminate_flag_ == false)) {
+		int bytes_sent = 0;
+		LOG4CXX_INFO(logger_, "frames_to_send is not empty");
+		::protocol_handler::RawMessagePtr frame = frames_to_send_local.front();
 
-  size_t offset = 0;
-  while (!frames_to_send_local.empty()) {
-  	int bytes_sent = 0;
-    LOG4CXX_INFO(logger_, "frames_to_send is not empty");
-    ::protocol_handler::RawMessagePtr frame = frames_to_send_local.front();
-	bytes_sent = usbmuxd_send_data(socket_,frame->data() + offset, frame->data_size() - offset);
-    if (bytes_sent >= 0) {
-      LOG4CXX_DEBUG(logger_, "bytes_sent >= 0");
-      offset += bytes_sent;	  
-      if (offset == frame->data_size()) {
-        frames_to_send_local.pop();
-        offset = 0;
-        controller_->DataSendDone(device_handle(), application_handle(), frame);
-      }
-    } else {
-      LOG4CXX_DEBUG(logger_, "bytes_sent < 0");
-      LOG4CXX_ERROR_WITH_ERRNO(logger_, "Send failed for connection " << this);
-      frames_to_send_local.pop();
-      offset = 0;
-      controller_->DataSendFailed(
-          device_handle(), application_handle(), frame, DataSendError());
-    }
-  }
+		int nneedsenddatalen = frame->data_size() - offset;
+		int ncurrentsendlen = 0,nreadsendlen = 0,nrealoffset = 0;
+		while(nneedsenddatalen > 0){
+			if(nneedsenddatalen > RECVBUFFERLEN){
+				ncurrentsendlen = RECVBUFFERLEN;
+			}
+			else{
+				ncurrentsendlen = nneedsenddatalen;
+			}
 
-  return true;
+			nrealoffset = offset + nreadsendlen;
+			bytes_sent = usbmuxd_send_data(socket_,frame->data() + nrealoffset, ncurrentsendlen);
+
+			if (bytes_sent >= 0) {
+				LOG4CXX_DEBUG(logger_, "bytes_sent >= 0");
+				offset += bytes_sent;	  
+				if (offset == frame->data_size()) {
+					frames_to_send_local.pop();
+					offset = 0;
+					controller_->DataSendDone(device_handle(), application_handle(), frame);
+				}
+			} 
+			else {
+				LOG4CXX_DEBUG(logger_, "bytes_sent < 0");
+				LOG4CXX_ERROR_WITH_ERRNO(logger_, "Send failed for connection " << this);
+				frames_to_send_local.pop();
+				offset = 0;
+				controller_->DataSendFailed(
+				  device_handle(), application_handle(), frame, DataSendError());
+			}
+
+			nneedsenddatalen -= ncurrentsendlen;
+			nreadsendlen += ncurrentsendlen;
+		}
+
+	}   
+
+	return true;
 }
 
 UsbmuxdSocketConnection::UsbmuxdSocketConnectionDelegate::UsbmuxdSocketConnectionDelegate(
@@ -580,13 +723,13 @@ UsbmuxdSocketConnection::UsbmuxdSocketConnectionDelegate::UsbmuxdSocketConnectio
     : connection_(connection) {}
 
 void UsbmuxdSocketConnection::UsbmuxdSocketConnectionDelegate::threadMain() {
-  LOG4CXX_AUTO_TRACE(logger_);
-  DCHECK(connection_);
-  connection_->threadMain();
+	LOG4CXX_AUTO_TRACE(logger_);
+	DCHECK(connection_);
+	connection_->threadMain();
 }
 
 void UsbmuxdSocketConnection::UsbmuxdSocketConnectionDelegate::exitThreadMain() {
-  LOG4CXX_AUTO_TRACE(logger_);
+	LOG4CXX_AUTO_TRACE(logger_);
 }
 
 UsbmuxdServerOiginatedSocketConnection::UsbmuxdServerOiginatedSocketConnection(
@@ -598,30 +741,30 @@ UsbmuxdServerOiginatedSocketConnection::UsbmuxdServerOiginatedSocketConnection(
 UsbmuxdServerOiginatedSocketConnection::~UsbmuxdServerOiginatedSocketConnection() {}
 
 bool UsbmuxdServerOiginatedSocketConnection::Establish(ConnectError** error) {
-  LOG4CXX_AUTO_TRACE(logger_);
-  DCHECK(error);
-  LOG4CXX_DEBUG(logger_, "error " << error);
-  DeviceSptr device = controller()->FindDevice(device_handle());
-  if (!device.valid()) {
-    LOG4CXX_ERROR(logger_, "Device " << device_handle() << " not found");
-    *error = new ConnectError();
-    return false;
-  }
+	LOG4CXX_AUTO_TRACE(logger_);
+	DCHECK(error);
+	LOG4CXX_DEBUG(logger_, "error " << error);
+	DeviceSptr device = controller()->FindDevice(device_handle());
+	if (!device.valid()) {
+		LOG4CXX_ERROR(logger_, "Device " << device_handle() << " not found");
+		*error = new ConnectError();
+		return false;
+	}
 
-  UsbmuxdDevice* Usbmuxd_device = static_cast<UsbmuxdDevice*>(device.get());
-  ApplicationHandle tmp = application_handle();
-  uint32_t handle = Usbmuxd_device->applications_[tmp].apphandle;
-  int mobileappport = 20001;
+	UsbmuxdDevice* Usbmuxd_device = static_cast<UsbmuxdDevice*>(device.get());
+	ApplicationHandle tmp = application_handle();
+	uint32_t handle = Usbmuxd_device->applications_[tmp].apphandle;
+	int mobileappport = 20001;
 
-  const int socket = usbmuxd_connect(handle,mobileappport);
-  if (socket < 0) {
-    LOG4CXX_ERROR(logger_, "Failed to conncet");
-    *error = new ConnectError();
-    return false;
-  }
-  
-  set_socket(socket);
-  return true;
+	const int socket = usbmuxd_connect(handle,mobileappport);
+	if (socket < 0) {
+		LOG4CXX_ERROR(logger_, "Failed to connect");
+		*error = new ConnectError();
+		return false;
+	}
+
+	set_socket(socket);
+	return true;
 }
 
 }  // namespace transport_adapter

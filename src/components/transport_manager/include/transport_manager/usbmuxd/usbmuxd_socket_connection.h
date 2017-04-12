@@ -48,7 +48,7 @@ namespace transport_manager {
 namespace transport_adapter {
 	
 #define TIMEOUT_ONECONNECT 60*60*24*30//s
-
+#define RECVBUFFERLEN 1048576
 class TransportAdapterController;
 
 /**
@@ -118,8 +118,9 @@ public:
  }
 
  int usbmuxd_send_data(int connect_sfd,uint8_t* sendsrcdata,int nsrcsendlen);
- int usbmuxd_recv_data(int connect_sfd,uint8_t *data,int datasize);
- int usbmuxd_recv_head(int connect_sfd);
+ int usbmuxd_recv_data(int connect_sfd,char* data,int datasize);
+ int usbmuxd_recv_head(int connect_sfd); 
+ bool explainrecvdata() ;
 protected:
 
 
@@ -157,6 +158,11 @@ private:
 
  int read_fd_;
  int write_fd_;
+ char recv_buffer[RECVBUFFERLEN];
+ char recv_buffer_nextframe[RECVBUFFERLEN];
+ char srealsenddata[RECVBUFFERLEN];
+ int recvbufferlen;
+ int recvbufferlen_nextframe;
  void threadMain();
  void Transmit();
  void Finalize();
@@ -172,7 +178,6 @@ private:
  typedef std::queue<protocol_handler::RawMessagePtr> FrameQueue;
  FrameQueue frames_to_send_;
  mutable sync_primitives::Lock frames_to_send_mutex_;
-
  int socket_;
  const int myport;
  bool terminate_flag_;
