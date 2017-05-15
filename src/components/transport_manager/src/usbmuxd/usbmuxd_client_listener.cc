@@ -58,9 +58,6 @@
 #include "transport_manager/usbmuxd/usbmuxd_device.h"
 #include "transport_manager/usbmuxd/usbmuxd_socket_connection.h"
 
-//#include "libimobiledevice/lockdown.h"
-//#include "libimobiledevice/libimobiledevice.h"
-//#include "usbmuxd.h"
 
 #ifdef __CPLUSPLUS
 extern "C"{
@@ -166,16 +163,14 @@ void UsbmuxdClientListener::Loop() {
 	devlist_count = usbmuxd_get_device_list(&devicelist);
 	if((devlist_count < 1) && ((nnowtime - nlasttime) > 1)){
 	  nlasttime = nnowtime;
-	  #ifdef USBMUXD_DEBUG
-	    printf("Failed to get usbmuxd device:%d\n",devlist_count);	
-	  #endif
+	  LOG4CXX_ERROR(logger_,"Failed to get usbmuxd device \n" << devlist_count);	
           usleep(100);
 	  continue;
 	}
 	else{
 	  nlasttime = nnowtime;
 	}
-	//printf("devlist_count %d\n",devlist_count);
+	
 	std::vector<DeviceUID> DeviceList;
 	for(ndevicenum = 0;ndevicenum < devlist_count;ndevicenum ++){				
  	  int appport = 20001;

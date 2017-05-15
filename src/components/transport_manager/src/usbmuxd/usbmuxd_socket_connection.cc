@@ -57,9 +57,6 @@ extern "C"{
 }
 #endif
 
-//#ifndef USBMUXD_DEBUG
-//#define USBMUXD_DEBUG
-//#endif
 namespace transport_manager {
 namespace transport_adapter {
 
@@ -217,8 +214,10 @@ void UsbmuxdSocketConnection::threadMain() {
 			}
 			delete connect_error;	  
 			usleep(100);	
+			LOG4CXX_ERROR(logger_,"connect port " <<  myport << "failed");
 		}
 		else{
+			LOG4CXX_ERROR(logger_,"connect port " <<  myport << "success");
 		  	break;
 		}
 	}
@@ -264,9 +263,7 @@ bool UsbmuxdSocketConnection::Establish(ConnectError** error) {
 		*error = new ConnectError();
 		return false;
 	}
-#ifdef USBMUXD_DEBUG
-	printf("connect port:%d success\n",myport);
-#endif
+
 	set_socket(socket);
 	Usbmuxd_device->applications_[tmp].socket = socket;
 
@@ -546,15 +543,13 @@ bool UsbmuxdSocketConnection::explainrecvdata() {
 	
 	if(isfindtail == false){
 		LOG4CXX_ERROR(logger_,"usbmuxd transfer data erro,cannot find data of tail");
-		printf("usbmuxd transfer data erro,cannot find data of tail\n");
 		recvbufferlen_nextframe = 0;
 		memset(recv_buffer_nextframe,0,RECVBUFFERLEN);	
 		return false;
 	}	  
 	//data len error				  
 	if(nremainlen > 0){				  
-		LOG4CXX_ERROR(logger_,"usbmuxd transfer data erro");		
-		printf("usbmuxd transfer data erro\n");				  
+		LOG4CXX_ERROR(logger_,"usbmuxd transfer data erro");				  
 		recvbufferlen_nextframe = nremainlen; 				  
 		memcpy(recv_buffer_nextframe,recv_buffer+recvbufferlen-nremainlen,recvbufferlen_nextframe); 				  
 		return false; 			  
@@ -572,8 +567,8 @@ bool UsbmuxdSocketConnection::explainrecvdata() {
 		llcrcb += (recv_buffer[recvbufferlen-6]&0xFF)*0x100;llcrcb %= 0xFFFFFFFF;			  		
 		llcrcb += (recv_buffer[recvbufferlen-5]&0xFF);llcrcb %= 0xFFFFFFFF;			  		
 		if(llcrc != llcrcb){			    		
-			//printf("check crc error,recv_buffer:%x,%x,%x,%x,%x,%lld\n",recv_buffer[recvbufferlen-8],recv_buffer[recvbufferlen-7],recv_buffer[recvbufferlen-6],recv_buffer[recvbufferlen-5],recv_buffer[recvbufferlen-4],llcrc);			  		
-			return true;
+			LOG4CXX_ERROR(logger_,"usbmuxd transfer data llcrc erro");				  		
+			return false;
 		}
 		else{
 			return true;
@@ -624,10 +619,6 @@ bool UsbmuxdSocketConnection::Receive() {
 			memcpy(recv_buffer+recvbufferlen,buffer,bytes_read);
 			recvbufferlen += bytes_read;
 		}
-		
-		#ifdef USBMUXD_DEBUG
-			printf("recvbufferlen:%d,needrecvsize:%d,bytes_read:%d\n",recvbufferlen,needrecvsize,bytes_read);
-		#endif
 		
 		if (recvbufferlen > 0 && needrecvsize <= 0 && bytes_read > 0) {			
 			//check data

@@ -999,9 +999,6 @@ void TransportAdapterImpl::RunAppOnDevice(const DeviceUID& device_uid,
 }
 
 void TransportAdapterImpl::RemoveDevice(const DeviceUID& device_handle) {
-  #ifdef USBMUXD_DEBUG	
-    printf("RemoveDevice:%s\n",device_handle.c_str());
-  #endif
   LOG4CXX_AUTO_TRACE(logger_);
   LOG4CXX_DEBUG(logger_, "Device_handle: " << &device_handle);
   sync_primitives::AutoLock locker(devices_mutex_);
