@@ -1,5 +1,8 @@
 /*
- * Copyright (c) 2014, Ford Motor Company
+ * \file Usbmuxd_transport_adapter.h
+ * \brief UsbmuxdTransportAdapter class header file.
+ *
+ * Copyright (c) 2013, Ford Motor Company
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,26 +33,53 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_TIME_METRIC_OBSERVER_H_
-#define SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_TIME_METRIC_OBSERVER_H_
+#ifndef SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_USBMUXD_USBMUXD_TRANSPORT_ADAPTER_H_
+#define SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_USBMUXD_USBMUXD_TRANSPORT_ADAPTER_H_
 
-#include "transport_manager/common.h"
-#include "protocol/raw_message.h"
-#include "utils/date_time.h"
+#include "transport_manager/transport_adapter/transport_adapter_impl.h"
 
 namespace transport_manager {
+namespace transport_adapter {
 
-class TMTelemetryObserver {
+/**
+ * @brief Transport adapter that use Usbmuxd transport.
+ */
+class UsbmuxdTransportAdapter : public TransportAdapterImpl {
  public:
-  struct MessageMetric {
-    TimevalStruct begin;
-    TimevalStruct end;
-    size_t data_size;
-  };
-  virtual void StartRawMsg(const protocol_handler::RawMessage* ptr) = 0;
-  virtual void StopRawMsg(const protocol_handler::RawMessage* ptr) = 0;
+  /**
+   * @brief Constructor.
+   */
+  explicit UsbmuxdTransportAdapter(uint16_t port,
+                               resumption::LastState& last_state,
+                               const TransportManagerSettings& settings);
 
-  virtual ~TMTelemetryObserver() {}
+  /**
+   * @brief Destructor.
+   */
+  virtual ~UsbmuxdTransportAdapter();
+
+ protected:
+  /**
+   * @brief Return type of device.
+   *
+   * @return String with device type.
+   */
+  virtual DeviceType GetDeviceType() const;
+
+  /**
+   * @brief Store adapter state in last state singleton
+   */
+  virtual void Store() const;
+
+  /**
+   * @brief Restore adapter state from last state singleton
+   *
+   * @return True on success false otherwise
+   */
+  virtual bool Restore();
 };
-}  // transport_manager
-#endif  // SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_TIME_METRIC_OBSERVER_H_
+
+}  // namespace transport_adapter
+}  // namespace transport_manager
+
+#endif  // SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_Usbmuxd_Usbmuxd_TRANSPORT_ADAPTER_H_

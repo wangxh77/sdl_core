@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, Ford Motor Company
+ * Copyright (c) 2015, Ford Motor Company
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,26 +30,49 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_TIME_METRIC_OBSERVER_H_
-#define SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_TIME_METRIC_OBSERVER_H_
+#include "transport_manager/usbmuxd/usbmuxd_connection_factory.h"
+#include "transport_manager/usbmuxd/usbmuxd_socket_connection.h"
 
-#include "transport_manager/common.h"
-#include "protocol/raw_message.h"
-#include "utils/date_time.h"
+#include "utils/logger.h"
 
 namespace transport_manager {
+namespace transport_adapter {
 
-class TMTelemetryObserver {
- public:
-  struct MessageMetric {
-    TimevalStruct begin;
-    TimevalStruct end;
-    size_t data_size;
-  };
-  virtual void StartRawMsg(const protocol_handler::RawMessage* ptr) = 0;
-  virtual void StopRawMsg(const protocol_handler::RawMessage* ptr) = 0;
+CREATE_LOGGERPTR_GLOBAL(logger_, "TransportManager")
 
-  virtual ~TMTelemetryObserver() {}
-};
-}  // transport_manager
-#endif  // SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_TIME_METRIC_OBSERVER_H_
+UsbmuxdConnectionFactory::UsbmuxdConnectionFactory(
+    TransportAdapterController* controller)
+    : controller_(controller) {}
+
+TransportAdapter::Error UsbmuxdConnectionFactory::Init() {
+  return TransportAdapter::OK;
+}
+
+TransportAdapter::Error UsbmuxdConnectionFactory::CreateConnection(
+    const DeviceUID& device_uid, const ApplicationHandle& app_handle) {
+  LOG4CXX_AUTO_TRACE(logger_);
+  LOG4CXX_DEBUG(logger_,
+                "DeviceUID: " << &device_uid
+                              << ", ApplicationHandle: " << &app_handle);
+  UsbmuxdServerOiginatedSocketConnection* connection(
+      new UsbmuxdServerOiginatedSocketConnection(
+          device_uid, app_handle, controller_));
+  if (connection->Start() == TransportAdapter::OK) {
+    LOG4CXX_DEBUG(logger_, "Usbmuxd connection initialised");
+    return TransportAdapter::OK;
+  } else {
+    LOG4CXX_ERROR(logger_, "Could not initialise Usbmuxd connection");
+    return TransportAdapter::FAIL;
+  }
+}
+
+void UsbmuxdConnectionFactory::Terminate() {}
+
+bool UsbmuxdConnectionFactory::IsInitialised() const {
+  return true;
+}
+
+UsbmuxdConnectionFactory::~UsbmuxdConnectionFactory() {}
+
+}  // namespace transport_adapter
+}  // namespace transport_manager

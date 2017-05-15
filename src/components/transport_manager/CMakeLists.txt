@@ -42,7 +42,12 @@ include_directories (
   ${LIBUSB_INCLUDE_DIRECTORY}
   ${LOG4CXX_INCLUDE_DIRECTORY}
 )
+ 
 if (BUILD_BT_SUPPORT)
+  include_directories(
+  )
+endif()
+if (BUILD_USBMUXD_SUPPORT)
   include_directories(
   )
 endif()
@@ -67,6 +72,16 @@ if (BUILD_BT_SUPPORT)
   ${TM_SRC_DIR}/bluetooth/bluetooth_connection_factory.cc
   ${TM_SRC_DIR}/bluetooth/bluetooth_socket_connection.cc
   ${TM_SRC_DIR}/bluetooth/bluetooth_device.cc
+  )
+endif()
+
+if (BUILD_USBMUXD_SUPPORT)
+  list (APPEND SOURCES
+  ${TM_SRC_DIR}/usbmuxd/usbmuxd_transport_adapter.cc
+  ${TM_SRC_DIR}/usbmuxd/usbmuxd_client_listener.cc
+  ${TM_SRC_DIR}/usbmuxd/usbmuxd_device.cc
+  ${TM_SRC_DIR}/usbmuxd/usbmuxd_socket_connection.cc
+  ${TM_SRC_DIR}/usbmuxd/usbmuxd_connection_factory.cc
   )
 endif()
 
@@ -110,6 +125,24 @@ endif()
 
 if (BUILD_BT_SUPPORT)
   target_link_libraries(${target} bluetooth)
+endif()
+
+if (BUILD_USBMUXD_SUPPORT)
+
+link_directories( /usr/lib
+    /usr/lib/x86_64-linux-gnu
+    /usr/local/lib )
+
+set(LIRBRARYS 
+    libimobiledevice.so
+    libplist.a
+    libplist++.so
+    libusbmuxd.so
+    ssl.so
+    xml2.so
+    pthread.so )
+
+  target_link_libraries(${target} ${LIRBRARYS} usbmuxd)
 endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "QNX")

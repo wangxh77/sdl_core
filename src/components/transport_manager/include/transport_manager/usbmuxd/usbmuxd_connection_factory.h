@@ -1,6 +1,6 @@
 /*
- * \file platform_usb_device.h
- * \brief libusb PlatformUsbDevice class header file.
+ * \file Usbmuxd_connection_factory.h
+ * \brief UsbmuxdConnectionFactory class header file.
  *
  * Copyright (c) 2013, Ford Motor Company
  * All rights reserved.
@@ -33,59 +33,66 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_USB_LIBUSB_PLATFORM_USB_DEVICE_H_
-#define SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_USB_LIBUSB_PLATFORM_USB_DEVICE_H_
+#ifndef SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_USBMUXD_USBMUXD_CONNECTION_FACTORY_H_
+#define SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_USBMUXD_USBMUXD_CONNECTION_FACTORY_H_
 
-#include <string>
-#include <libusb/libusb.h>
+#include "transport_manager/transport_adapter/server_connection_factory.h"
+#include "transport_manager/transport_adapter/transport_adapter_controller.h"
 
 namespace transport_manager {
-
 namespace transport_adapter {
 
-class PlatformUsbDevice {
+/**
+ * @brief Create connections.
+ */
+class UsbmuxdConnectionFactory : public ServerConnectionFactory {
  public:
-  uint8_t bus_number() const {
-    return bus_number_;
-  }
-  uint8_t address() const {
-    return address_;
-  }
-  uint16_t vendor_id() const {
-    return vendor_id_;
-  }
-  uint16_t product_id() const {
-    return product_id_;
-  }
-  std::string GetManufacturer() const;
-  std::string GetProductName() const;
-  std::string GetSerialNumber() const;
-  PlatformUsbDevice(uint8_t bus,
-                    uint8_t address,
-                    const libusb_device_descriptor& device_descriptor,
-                    libusb_device* device_libusb,
-                    libusb_device_handle* device_handle_libusb);
-  libusb_device_handle* GetLibusbHandle() {
-    return libusb_device_handle_;
-  }
-  libusb_device* GetLibusbDevice() {
-    return libusb_device_;
-  }
+  /**
+   * @brief Constructor.
+   *
+   * @param controller Pointer to the device adapter controller.
+   */
+  explicit UsbmuxdConnectionFactory(TransportAdapterController* controller);
+
+  /**
+   * @brief Start Usbmuxd connection factory.
+   */
+  virtual TransportAdapter::Error Init();
+
+  /**
+   * @brief Constructor.
+   *
+   * @param device_uid device unique identifier.
+   * @param app_handle Handle of application.
+   *
+   * @return Error information about possible reason of failure.
+   */
+  virtual TransportAdapter::Error CreateConnection(
+      const DeviceUID& device_uid, const ApplicationHandle& app_handle);
+
+  /**
+   * @brief
+   */
+  virtual void Terminate();
+
+  /**
+   * @brief Check for initialization.
+   *
+   * @return true - initialized.
+   * false - not initialized.
+   */
+  virtual bool IsInitialised() const;
+
+  /**
+   * @brief Destructor.
+   */
+  virtual ~UsbmuxdConnectionFactory();
 
  private:
-  std::string GetDescString(uint8_t index) const;
-
- private:
-  uint8_t bus_number_;
-  uint8_t address_;
-  uint16_t vendor_id_;
-  uint16_t product_id_;
-  libusb_device_descriptor device_descriptor_;
-  libusb_device_handle* libusb_device_handle_;
-  libusb_device* libusb_device_;
+  TransportAdapterController* controller_;
 };
 
 }  // namespace transport_adapter
 }  // namespace transport_manager
 
-#endif  // SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_USB_LIBUSB_PLATFORM_USB_DEVICE_H_
+#endif  // SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_Usbmuxd_Usbmuxd_CONNECTION_FACTORY_H_

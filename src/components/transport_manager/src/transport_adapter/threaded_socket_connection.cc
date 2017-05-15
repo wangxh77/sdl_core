@@ -44,6 +44,18 @@
 #include "transport_manager/transport_adapter/threaded_socket_connection.h"
 #include "transport_manager/transport_adapter/transport_adapter_controller.h"
 
+#ifdef __CPLUSPLUS
+extern "C"{
+#endif
+#include "libimobiledevice/lockdown.h"
+#include "libimobiledevice/libimobiledevice.h"
+#include "usbmuxd-proto.h"
+#include "usbmuxd.h"
+#ifdef __CPLUSPLUS
+}
+#endif
+
+
 namespace transport_manager {
 namespace transport_adapter {
 CREATE_LOGGERPTR_GLOBAL(logger_, "TransportManager")
@@ -148,6 +160,7 @@ TransportAdapter::Error ThreadedSocketConnection::Notify() const {
 
 TransportAdapter::Error ThreadedSocketConnection::SendData(
     ::protocol_handler::RawMessagePtr message) {
+    
   LOG4CXX_AUTO_TRACE(logger_);
   sync_primitives::AutoLock auto_lock(frames_to_send_mutex_);
   frames_to_send_.push(message);
@@ -164,15 +177,19 @@ void ThreadedSocketConnection::threadMain() {
   LOG4CXX_AUTO_TRACE(logger_);
   controller_->ConnectionCreated(this, device_handle(), application_handle());
   ConnectError* connect_error = NULL;
+
   if (!Establish(&connect_error)) {
     LOG4CXX_ERROR(logger_, "Connection Establish failed");
     delete connect_error;
   }
   LOG4CXX_DEBUG(logger_, "Connection established");
+  
   controller_->ConnectDone(device_handle(), application_handle());
+  
   while (!terminate_flag_) {
     Transmit();
   }
+
   LOG4CXX_DEBUG(logger_, "Connection is to finalize");
   Finalize();
   sync_primitives::AutoLock auto_lock(frames_to_send_mutex_);
@@ -193,7 +210,6 @@ bool ThreadedSocketConnection::IsFramesToSendQueueEmpty() const {
 
 void ThreadedSocketConnection::Transmit() {
   LOG4CXX_AUTO_TRACE(logger_);
-
   const nfds_t kPollFdsSize = 2;
   pollfd poll_fds[kPollFdsSize];
   poll_fds[0].fd = socket_;
@@ -232,6 +248,7 @@ void ThreadedSocketConnection::Transmit() {
   // clear notifications
   char buffer[256];
   ssize_t bytes_read = -1;
+  
   do {
     bytes_read = read(read_fd_, buffer, sizeof(buffer));
   } while (bytes_read > 0);
@@ -243,7 +260,6 @@ void ThreadedSocketConnection::Transmit() {
   }
 
   const bool is_queue_empty = IsFramesToSendQueueEmpty();
-
   // Send data if possible
   if (!is_queue_empty && (poll_fds[0].revents | POLLOUT)) {
     LOG4CXX_DEBUG(logger_, "frames_to_send_ not empty() ");
@@ -258,6 +274,7 @@ void ThreadedSocketConnection::Transmit() {
   }
 
   // receive data
+  
   if (poll_fds[0].revents & (POLLIN | POLLPRI)) {
     const bool receive_ok = Receive();
     if (!receive_ok) {
@@ -266,16 +283,15 @@ void ThreadedSocketConnection::Transmit() {
       return;
     }
   }
+  
 }
 
 bool ThreadedSocketConnection::Receive() {
   LOG4CXX_AUTO_TRACE(logger_);
   uint8_t buffer[4096];
   ssize_t bytes_read = -1;
-
   do {
     bytes_read = recv(socket_, buffer, sizeof(buffer), MSG_DONTWAIT);
-
     if (bytes_read > 0) {
       LOG4CXX_DEBUG(logger_,
                     "Received " << bytes_read << " bytes for connection "
@@ -284,13 +300,15 @@ bool ThreadedSocketConnection::Receive() {
           new protocol_handler::RawMessage(0, 0, buffer, bytes_read));
       controller_->DataReceiveDone(
           device_handle(), application_handle(), frame);
-    } else if (bytes_read < 0) {
+    } 
+    else if (bytes_read < 0) {
       if (EAGAIN != errno && EWOULDBLOCK != errno) {
         LOG4CXX_ERROR_WITH_ERRNO(logger_,
                                  "recv() failed for connection " << this);
         return false;
       }
-    } else {
+    } 
+    else {
       LOG4CXX_WARN(logger_, "Connection " << this << " closed by remote peer");
       return false;
     }
@@ -310,14 +328,14 @@ bool ThreadedSocketConnection::Send() {
 
   size_t offset = 0;
   while (!frames_to_send_local.empty()) {
+  	ssize_t bytes_sent = 0;
     LOG4CXX_INFO(logger_, "frames_to_send is not empty");
     ::protocol_handler::RawMessagePtr frame = frames_to_send_local.front();
-    const ssize_t bytes_sent =
-        ::send(socket_, frame->data() + offset, frame->data_size() - offset, 0);
-
+	bytes_sent =
+    	::send(socket_, frame->data() + offset, frame->data_size() - offset, 0);
     if (bytes_sent >= 0) {
       LOG4CXX_DEBUG(logger_, "bytes_sent >= 0");
-      offset += bytes_sent;
+      offset += bytes_sent;	  
       if (offset == frame->data_size()) {
         frames_to_send_local.pop();
         offset = 0;

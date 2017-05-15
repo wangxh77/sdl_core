@@ -1,6 +1,6 @@
 /*
- * \file tcp_device.h
- * \brief TcpDevice class header file.
+ * \file Usbmuxd_device.h
+ * \brief UsbmuxdDevice class header file.
  *
  * Copyright (c) 2013, Ford Motor Company
  * All rights reserved.
@@ -33,8 +33,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_TCP_TCP_DEVICE_H_
-#define SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_TCP_TCP_DEVICE_H_
+#ifndef SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_USBMUXD_USBMUXD_DEVICE_H_
+#define SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_USBMUXD_USBMUXD_DEVICE_H_
 
 #include <memory.h>
 #include <signal.h>
@@ -54,9 +54,9 @@ namespace transport_manager {
 namespace transport_adapter {
 
 /**
- * @brief Information about device that use TCP transport.
+ * @brief Information about device that use Usbmuxd transport.
  */
-class TcpDevice : public Device {
+class UsbmuxdDevice : public Device {
  public:
   /**
    * @brief Constructor.
@@ -64,9 +64,9 @@ class TcpDevice : public Device {
    * @param in_addr Address.
    * @param name Device Name.
    **/
-  TcpDevice(const in_addr_t& in_addr, const std::string& name);
+  UsbmuxdDevice(const std::string& udid, const std::string& name);
 
-  virtual ~TcpDevice();
+  virtual ~UsbmuxdDevice();
 
   /**
    * @brief Compare devices.
@@ -89,7 +89,7 @@ class TcpDevice : public Device {
    *
    * @param socket Value of socket.
    */
-  ApplicationHandle AddIncomingApplication(int socket_fd);
+  ApplicationHandle AddIncomingApplication(int apphandle);
 
   /**
    * @brief Add application that was discovered before.
@@ -128,19 +128,21 @@ class TcpDevice : public Device {
    *
    * @return Address.
    */
-  in_addr_t in_addr() const {
+  std::string in_addr() const {
     return in_addr_;
   }
-
- private:
+  
   struct Application {
     bool incoming;
     int socket;
     uint16_t port;
+	int apphandle;
   };
-  std::map<ApplicationHandle, Application> applications_;
+ std::map<ApplicationHandle, Application> applications_;
+
+ private:
   mutable sync_primitives::Lock applications_mutex_;
-  const in_addr_t in_addr_;
+  const std::string in_addr_;
   const std::string name_;
   ApplicationHandle last_handle_;
 };
@@ -148,4 +150,4 @@ class TcpDevice : public Device {
 }  // namespace transport_adapter
 }  // namespace transport_manager
 
-#endif  // SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_TCP_TCP_DEVICE_H_
+#endif  // SRC_COMPONENTS_TRANSPORT_MANAGER_INCLUDE_TRANSPORT_MANAGER_Usbmuxd_Usbmuxd_DEVICE_H_
