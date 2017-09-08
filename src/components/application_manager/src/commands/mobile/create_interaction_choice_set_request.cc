@@ -118,7 +118,12 @@ void CreateInteractionChoiceSetRequest::Run() {
   uint32_t grammar_id = application_manager_.GenerateGrammarID();
   (*message_)[strings::msg_params][strings::grammar_id] = grammar_id;
   app->AddChoiceSet(choice_set_id_, (*message_)[strings::msg_params]);
-  SendVRAddCommandRequests(app);
+  HMICapabilities& hmi_capabilities = application_manager_.hmi_capabilities();
+  if(hmi_capabilities.is_vr_cooperating()) {
+    SendVRAddCommandRequests(app);
+  } else {
+    OnAllHMIResponsesReceived();
+  }
 }
 
 mobile_apis::Result::eType CreateInteractionChoiceSetRequest::CheckChoiceSet(
